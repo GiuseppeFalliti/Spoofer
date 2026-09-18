@@ -214,24 +214,77 @@ windows-mac-spoofer/
 └── requirements.txt        # Dipendenze Python
 ```
 
-## Implementazione Suggerita
+### 11. Aggiornare il file `README.md`
 
-1. **Interfaccia Grafica**:
-   - Utilizzare PyQt5 o tkinter per creare un'interfaccia intuitiva
-   - Includere un menu a tendina per selezionare l'interfaccia di rete
-   - Aggiungere pulsanti per generare MAC casuali o inserirne uno personalizzato
-   - Visualizzare lo stato corrente e il risultato dell'operazione
+Aggiungi una sezione per descrivere le funzionalità HWID:
 
-2. **Funzionalità Avanzate**:
-   - Opzione per salvare/ripristinare gli indirizzi MAC originali
-   - Possibilità di creare profili per diversi giochi
-   - Timer per ripristinare automaticamente il MAC originale
-   - Log delle operazioni eseguite
+```markdown
+## Funzionalità HWID
 
-3. **Sicurezza**:
-   - Verifica dei privilegi di amministratore all'avvio
-   - Creazione di un backup del registro prima delle modifiche
-   - Opzione per ripristinare completamente le modifiche
+Oltre allo spoofing degli indirizzi MAC, il progetto ora supporta anche la modifica degli identificatori hardware (HWID):
+
+- Modifica del Machine GUID
+- Modifica del numero di serie del disco
+- Modifica dell'UUID del BIOS
+- Modifica del numero di serie della scheda madre
+- Modifica dell'ID del processore
+- Salvataggio e ripristino degli identificatori hardware originali
+
+## Utilizzo
+
+### Interfaccia Grafica
+
+1. Avvia l'applicazione come amministratore
+2. Per lo spoofing MAC:
+   - Seleziona un'interfaccia di rete dalla lista
+   - Genera un MAC casuale o inseriscine uno personalizzato
+   - Clicca "Applica MAC" per applicare le modifiche
+   - Clicca "Ripristina Originale" per ripristinare il MAC originale
+3. Per lo spoofing HWID:
+   - Clicca "Aggiorna Info HWID" per visualizzare gli identificatori hardware attuali
+   ### 11. Aggiornare il file `README.md`
+
+Aggiungi una sezione per descrivere le funzionalità HWID:
+
+```markdown
+## Funzionalità HWID
+
+Oltre allo spoofing degli indirizzi MAC, il progetto ora supporta anche la modifica degli identificatori hardware (HWID):
+
+- Modifica del Machine GUID
+- Modifica del numero di serie del disco
+- Modifica dell'UUID del BIOS
+- Modifica del numero di serie della scheda madre
+- Modifica dell'ID del processore
+- Salvataggio e ripristino degli identificatori hardware originali
+
+## Utilizzo
+
+### Interfaccia Grafica
+
+1. Avvia l'applicazione come amministratore
+2. Per lo spoofing MAC:
+   - Seleziona un'interfaccia di rete dalla lista
+   - Genera un MAC casuale o inseriscine uno personalizzato
+   - Clicca "Applica MAC" per applicare le modifiche
+   - Clicca "Ripristina Originale" per ripristinare il MAC originale
+3. Per lo spoofing HWID:
+   - Clicca "Aggiorna Info HWID" per visualizzare gli identificatori hardware attuali
+   - Clicca "Ripristina HWID Originali" per ripristinare gli identificatori hardware originali
+4. Controlla il log delle operazioni per verificare l'esito delle modifiche
+
+### Interfaccia a Riga di Comando (CLI)
+
+1. Esegui lo script come amministratore
+2. Scegli tra "Spoof MAC address" o "Spoof Hardware ID (HWID)"
+3. Segui le istruzioni per completare l'operazione desiderata
+
+## Avvertenze Importanti
+
+- L'utilizzo di questo strumento per bypassare sistemi anti-cheat potrebbe violare i termini di servizio di alcuni giochi
+- Si consiglia sempre di salvare gli identificatori originali prima di applicare modifiche
+- Potrebbe essere necessario riavviare il sistema per applicare completamente tutte le modifiche
+- Alcuni identificatori hardware potrebbero essere protetti da sistemi di sicurezza più avanzati
 
 ## Note Importanti
 

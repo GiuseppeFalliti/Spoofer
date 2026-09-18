@@ -94,3 +94,26 @@ class RegistryUtils:
             logger.error(f"Registry backup failed: {e}")
             return False
 
+    @staticmethod
+    def get_registry_value(root, key_path, value_name):
+        """Ottiene un valore dal registro di sistema"""
+        try:
+            key = winreg.OpenKey(root, key_path, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(key, value_name)
+            winreg.CloseKey(key)
+            return value
+        except (OSError, FileNotFoundError):
+            return None
+
+    @staticmethod
+    def set_registry_value(root, key_path, value_name, data):
+        """Imposta un valore nel registro di sistema"""
+        try:
+            # Crea la chiave se non esiste
+            key = winreg.CreateKey(root, key_path)
+            winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, data)
+            winreg.CloseKey(key)
+            return True
+        except OSError as e:
+            logger.error(f"Failed to set registry value: {e}")
+            return False

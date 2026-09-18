@@ -1,0 +1,14 @@
+{
+  "auto_save_originals": true,
+  "backup_registry": true,
+  "log_level": "INFO",
+  "require_restart": true,
+  "default_mac_prefix": "02",
+  "hwid_components": {
+    "machine_guid": true,
+    "disk_serial": true,
+    "bios_uuid": true,
+    "motherboard_serial": true,
+    "processor_id": true
+  }
+}
