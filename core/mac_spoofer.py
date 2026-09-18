@@ -1,16 +1,36 @@
-﻿import subprocess
+import subprocess
 import random
 import re
 import json
 import os
+import sys
 import logging
 from datetime import datetime
 from .registry_utils import RegistryUtils
 
 logger = logging.getLogger(__name__)
 
-SAVED_MACS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "saved_macs.json")
-LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "spoofer.log")
+
+def get_app_data_dir() -> str:
+    """Restituisce la cartella 'data/' scrivibile accanto all'eseguibile.
+
+    - Exe PyInstaller  → stessa cartella del .exe  (sys.executable)
+    - Script Python    → stessa cartella di main.py (CWD o __file__ root)
+    La cartella viene creata automaticamente se non esiste.
+    """
+    if getattr(sys, "frozen", False):
+        # Modalità PyInstaller --onefile: sys.executable è il percorso del .exe
+        base = os.path.dirname(sys.executable)
+    else:
+        # Modalità sviluppo: risali alla root del progetto
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+SAVED_MACS_FILE = os.path.join(get_app_data_dir(), "saved_macs.json")
+LOG_FILE        = os.path.join(get_app_data_dir(), "spoofer.log")
 
 
 def setup_logging():

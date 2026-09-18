@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import os
+import sys
 import uuid
 import random
 import logging
@@ -10,15 +11,34 @@ from .registry_utils import RegistryUtils
 logger = logging.getLogger(__name__)
 
 
+def get_app_data_dir() -> str:
+    """Restituisce la cartella 'data/' scrivibile accanto all'eseguibile."""
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def get_app_root_dir() -> str:
+    """Restituisce la cartella root dell'applicazione (accanto all'exe)."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 class HwidSpoofer:
     """Core class for Hardware ID spoofing operations on Windows."""
 
     def __init__(self):
         self.registry_utils = RegistryUtils()
-        self.saved_hwids_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "saved_hwids.json")
-        self.config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+        self.saved_hwids_file = os.path.join(get_app_data_dir(), "saved_hwids.json")
+        self.config_file = os.path.join(get_app_root_dir(), "config.json")
         self.config = self.load_config()
         self._ensure_data_dir()
+
 
     def load_config(self):
         """Carica le impostazioni dal file di configurazione"""

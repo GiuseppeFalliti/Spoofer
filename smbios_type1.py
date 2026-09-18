@@ -1,4 +1,4 @@
-﻿import struct
+import struct
 import uuid
 from dataclasses import dataclass
 
@@ -39,6 +39,15 @@ def generate_fake_smbios_type1() -> SMBIOSType1:
     info = SMBIOSType1()
     info.uuid_bytes = uuid.uuid4().bytes_le  # bytes_le rispetta il mixed-endian SMBIOS
     return info
+
+def generate_random_uuid() -> str:
+    """Genera un UUID casuale in formato stringa.
+
+    Alias usato dalla GUI (gui/main_window.py) per generare un UUID
+    casuale da usare come nuovo identificatore SMBIOS/BIOS.
+    """
+    return str(uuid.uuid4())
+
 
 def build_raw_smbios_table() -> bytes:
     """

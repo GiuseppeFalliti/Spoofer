@@ -13,21 +13,15 @@ DRIVER_FILENAME = "hwid_virtualization_driver.sys"
 
 
 def get_resource_path(relative_path: str) -> str:
-    """Ottiene il percorso assoluto di una risorsa.
-
-    Funzionante sia in sviluppo che in un eseguibile PyInstaller:
-    - In un .exe compilato con --onefile, PyInstaller estrae i file in una
-      cartella temporanea il cui percorso è esposto tramite ``sys._MEIPASS``.
-    - In ambiente di sviluppo ``sys._MEIPASS`` non esiste, quindi si usa la
-      directory di lavoro corrente.
-    """
-    try:
-        # PyInstaller imposta _MEIPASS sulla cartella temporanea di estrazione
-        base_path = sys._MEIPASS  # type: ignore[attr-defined]
-    except AttributeError:
-        # Ambiente di sviluppo: usa la directory corrente
-        base_path = os.path.abspath(".")
-
+    """Ottiene il percorso assoluto di una risorsa, funzionante sia in sviluppo che in un eseguibile PyInstaller (OneFile)."""
+    
+    # Se l'app è stata compilata con PyInstaller --onefile, sys._MEIPASS contiene la cartella temporanea estratta
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        # Altrimenti, usa la directory del progetto (sviluppo)
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
     return os.path.join(base_path, relative_path)
 
 
@@ -37,39 +31,48 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
     Il parametro ``driver_path`` può essere:
     - Un percorso assoluto (es. ``C:\\drivers\\mio.sys``) → usato così com'è.
     - Un percorso relativo o solo il nome file (es. ``hwid_virtualization_driver.sys``)
-      → risolto tramite :func:`get_resource_path` per supportare sia lo sviluppo
-      che l'eseguibile PyInstaller compilato con ``--onefile``.
-
-    Nota: il Service Control Manager di Windows richiede un percorso **assoluto**,
-    quindi la risoluzione è obbligatoria prima di passare il path all'API.
+      → risolto tramite :func:`get_resource_path`.
     """
-    # Risolvi il percorso: se non è assoluto, cercalo nella posizione corretta
-    # (cartella temporanea di PyInstaller oppure directory di lavoro corrente)
     if not os.path.isabs(driver_path):
         driver_path = get_resource_path(driver_path)
 
     if not os.path.isfile(driver_path):
-        print(f"[-] File driver non trovato: {driver_path}")
-        return False
+        raise FileNotFoundError(
+            f"File driver non trovato: '{driver_path}'\n\n"
+            f"Assicurati che il file '{os.path.basename(driver_path)}' sia posizionato:\n"
+            f"1. Accanto all'eseguibile HWIDSpoofer.exe, oppure\n"
+            f"2. Nella cartella del progetto prima di eseguire build.py."
+        )
 
     scm_handle = None
     svc_handle = None
     try:
         scm_handle = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_ALL_ACCESS)
-        svc_handle = win32service.CreateService(
-            scm_handle, service_name, service_name,
-            win32service.SERVICE_ALL_ACCESS,
-            win32service.SERVICE_KERNEL_DRIVER,
-            win32service.SERVICE_DEMAND_START,
-            win32service.SERVICE_ERROR_IGNORE,
-            driver_path, None, 0, None, None, None
-        )
-        win32service.StartService(svc_handle, [])
+        try:
+            svc_handle = win32service.CreateService(
+                scm_handle, service_name, service_name,
+                win32service.SERVICE_ALL_ACCESS,
+                win32service.SERVICE_KERNEL_DRIVER,
+                win32service.SERVICE_DEMAND_START,
+                win32service.SERVICE_ERROR_IGNORE,
+                driver_path, None, 0, None, None, None
+            )
+        except pywintypes.error as e:
+            if e.winerror == 1073:  # ERROR_SERVICE_EXISTS
+                svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_ALL_ACCESS)
+            else:
+                raise
+
+        try:
+            win32service.StartService(svc_handle, [])
+        except pywintypes.error as e:
+            if e.winerror == 1056:  # ERROR_SERVICE_ALREADY_RUNNING
+                pass
+            else:
+                raise
+
         print(f"[+] Driver '{service_name}' caricato e avviato da: {driver_path}")
         return True
-    except pywintypes.error as e:
-        print(f"[-] Errore: {e}")
-        return False
     finally:
         if svc_handle:
             try: win32service.CloseServiceHandle(svc_handle)
@@ -80,12 +83,14 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
 
 
 
+
 def unload_driver(service_name: str) -> bool:
     scm_handle = None
     svc_handle = None
     try:
         scm_handle = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_ALL_ACCESS)
-        svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_STOP | win32service.DELETE)
+        delete_flag = getattr(win32con, "DELETE", 0x00010000)
+        svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_STOP | delete_flag)
         try:
             win32service.ControlService(svc_handle, win32service.SERVICE_CONTROL_STOP)
             for _ in range(10):

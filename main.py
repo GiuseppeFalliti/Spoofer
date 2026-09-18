@@ -1,9 +1,33 @@
-﻿import sys
+import sys
 import os
 import ctypes
 
+# ---------------------------------------------------------------------------
+# Utility: in modalità --windowed non esiste sys.stdin/stdout.
+# Reindirizza gli stream mancanti a devnull per evitare crash successivi
+# e usa MessageBoxW per i dialoghi bloccanti al posto di input().
+# ---------------------------------------------------------------------------
+def _fix_windowed_streams() -> None:
+    """Reindirizza stdout/stderr a NUL se non disponibili (--windowed)."""
+    for attr in ("stdout", "stderr"):
+        if getattr(sys, attr, None) is None:
+            setattr(sys, attr, open(os.devnull, "w"))
 
-def is_admin():
+
+def _msgbox(title: str, message: str, icon: int = 0x10) -> None:
+    """Mostra una MessageBox di Windows bloccante (non richiede console).
+
+    icon: 0x10 = MB_ICONERROR, 0x30 = MB_ICONWARNING, 0x40 = MB_ICONINFO
+    """
+    ctypes.windll.user32.MessageBoxW(0, message, title, icon)
+
+
+def _no_stdin() -> bool:
+    """Restituisce True se non c'è una console collegata (modalità --windowed)."""
+    return getattr(sys, "stdin", None) is None
+
+
+def is_admin() -> bool:
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
@@ -11,22 +35,33 @@ def is_admin():
 
 
 def main():
+    _fix_windowed_streams()
+
     if not is_admin():
-        print("=" * 50)
-        print("  Windows MAC Spoofer")
-        print("=" * 50)
-        print("\nQuesto programma richiede privilegi di amministratore.")
-        print("Fai clic destro sull'eseguibile e seleziona 'Esegui come amministratore'.")
-        input("\nPremi Invio per uscire...")
+        msg = (
+            "Questo programma richiede privilegi di amministratore.\n\n"
+            "Fai clic destro sull'eseguibile e seleziona\n"
+            "'Esegui come amministratore'."
+        )
+        if _no_stdin():
+            # Modalità GUI/windowed: usa una MessageBox invece di input()
+            _msgbox("Privilegi insufficienti", msg, icon=0x10)
+        else:
+            print(msg)
+            input("\nPremi Invio per uscire...")
         sys.exit(1)
 
     try:
         from gui.main_window import run_gui
         run_gui()
     except ImportError as e:
-        print(f"Impossibile caricare l'interfaccia grafica: {e}")
-        print("Avvio in modalita terminale...\n")
-        run_cli()
+        err = f"Impossibile caricare l'interfaccia grafica:\n{e}"
+        if _no_stdin():
+            _msgbox("Errore di avvio", err, icon=0x10)
+        else:
+            print(err)
+            print("Avvio in modalita terminale...\n")
+            run_cli()
 
 
 def run_cli():

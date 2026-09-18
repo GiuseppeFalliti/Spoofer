@@ -63,19 +63,44 @@ def build() -> None:
         "--onefile",                       # singolo .exe
         "--windowed",                      # nessuna console
         f"--name={EXE_NAME}",             # nome dell'eseguibile
-        # Hidden imports utili per PyQt5 + winreg + ctypes
+        # --- PyQt5 ---
         "--hidden-import=PyQt5",
         "--hidden-import=PyQt5.QtCore",
         "--hidden-import=PyQt5.QtGui",
         "--hidden-import=PyQt5.QtWidgets",
+        # --- Moduli core del progetto ---
+        "--hidden-import=core",
+        "--hidden-import=core.mac_spoofer",
+        "--hidden-import=core.hwid_spoofer",
+        "--hidden-import=core.registry_utils",
+        "--hidden-import=core.driver_utils",
+        "--hidden-import=core.smbios_type1",
+        # --- Moduli gui del progetto ---
+        "--hidden-import=gui",
+        "--hidden-import=gui.main_window",
+        "--hidden-import=gui.config_dialog",
+        # --- Librerie Windows ---
         "--hidden-import=winreg",
         "--hidden-import=ctypes",
+        "--hidden-import=win32service",
+        "--hidden-import=win32file",
+        "--hidden-import=win32con",
+        "--hidden-import=pywintypes",
+        "--hidden-import=win32api",
     ]
 
     # Driver kernel (.sys) — incluso nella radice della cartella temporanea
     if include_driver:
         # Sintassi Windows per --add-data: "sorgente;destinazione"
         cmd.append(f"--add-data={DRIVER_SYS};.")
+
+    # config.json — copiato accanto all'exe (non nella _MEI temporanea)
+    config_json = os.path.join(BASE_DIR, "config.json")
+    if os.path.isfile(config_json):
+        cmd.append(f"--add-data={config_json};.")
+        print(f"[OK] config.json incluso  : {config_json}")
+    else:
+        print(f"[INFO] config.json non trovato — verrà creato al primo avvio.")
 
     # Icona (opzionale)
     if os.path.isfile(ICON_ICO):

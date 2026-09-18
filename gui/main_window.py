@@ -18,6 +18,13 @@ from core.driver_utils import load_driver, unload_driver, send_ioctl
 from core.smbios_type1 import generate_random_uuid
 from gui.config_dialog import ConfigDialog
 
+# ---------------------------------------------------------------------------
+# Costanti driver — devono corrispondere al nome servizio registrato in SCM
+# e al symbolic link esposto dal driver nel namespace di I/O di Windows.
+# ---------------------------------------------------------------------------
+SERVICE_NAME = "HWIDVirtualizationDriver"
+DEVICE_PATH  = r"\\.\HWIDVirtualizationDriver"
+
 
 class WorkerThread(QThread):
     finished = pyqtSignal(bool, str)
@@ -261,7 +268,8 @@ class MainWindow(QMainWindow):
     def _send_ioctl_safe(self, ioctl_code, payload):
         """Wrapper sicuro per inviare IOCTL senza crashare la GUI."""
         try:
-            send_ioctl(ioctl_code, payload)
+            in_buffer = payload.to_bytes(4, byteorder="little") if isinstance(payload, int) else payload
+            send_ioctl(DEVICE_PATH, ioctl_code, in_buffer)
             return True
         except Exception as e:
             self.log_message(f"Errore IOCTL 0x{ioctl_code:08X}: {e}")
@@ -270,7 +278,8 @@ class MainWindow(QMainWindow):
 
     def on_load_driver(self):
         try:
-            load_driver()
+            if not load_driver(SERVICE_NAME):
+                raise RuntimeError(f"Impossibile avviare il servizio driver '{SERVICE_NAME}'.")
             self.lbl_driver_status.setText("Stato: Caricato")
             self.lbl_driver_status.setStyleSheet("font-weight: bold; color: green;")
             self._set_driver_widgets_enabled(True)
@@ -289,7 +298,8 @@ class MainWindow(QMainWindow):
             if self.cb_smbios_hook.isChecked():
                 self.cb_smbios_hook.setChecked(False)
 
-            unload_driver()
+            if not unload_driver(SERVICE_NAME):
+                raise RuntimeError(f"Impossibile arrestare o eliminare il servizio '{SERVICE_NAME}'.")
             self.lbl_driver_status.setText("Stato: Non Caricato")
             self.lbl_driver_status.setStyleSheet("font-weight: bold; color: red;")
             self._set_driver_widgets_enabled(False)
