@@ -13,16 +13,30 @@ DRIVER_FILENAME = "hwid_virtualization_driver.sys"
 
 
 def get_resource_path(relative_path: str) -> str:
-    """Ottiene il percorso assoluto di una risorsa, funzionante sia in sviluppo che in un eseguibile PyInstaller (OneFile)."""
-    
-    # Se l'app è stata compilata con PyInstaller --onefile, sys._MEIPASS contiene la cartella temporanea estratta
+    """Risolve una risorsa sia in sviluppo sia da un eseguibile PyInstaller.
+
+    Per gli eseguibili one-file prova prima la directory temporanea _MEIPASS
+    e poi la cartella che contiene l'exe. Questo permette anche di distribuire
+    risorse esterne accanto a HWIDSpoofer.exe.
+    """
+    candidates = []
+
     if hasattr(sys, "_MEIPASS"):
-        base_path = sys._MEIPASS
-    else:
-        # Altrimenti, usa la directory del progetto (sviluppo)
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    
-    return os.path.join(base_path, relative_path)
+        candidates.append(os.path.join(sys._MEIPASS, relative_path))
+
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), relative_path))
+
+    candidates.append(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+    )
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    # Mantiene un percorso deterministico nel messaggio di errore.
+    return candidates[0]
 
 
 def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
