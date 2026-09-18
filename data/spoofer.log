@@ -30,3 +30,36 @@
 2026-09-17 22:22:14,565 [INFO] Removed NetworkAddress at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
 2026-09-17 22:22:16,448 [INFO] Interface Wi-Fi enabled
 2026-09-17 22:22:16,448 [INFO] MAC restored for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
+2026-09-18 20:29:45,994 [INFO] Saved original MAC for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
+2026-09-18 20:29:46,020 [ERROR] Registry backup failed: Command '['reg', 'export', 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\0002', 'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\data\\backup_0002_20260918202945.reg', '/y']' returned non-zero exit status 1.
+2026-09-18 20:29:47,197 [INFO] Interface Wi-Fi disabled
+2026-09-18 20:29:47,198 [INFO] Set NetworkAddress to 0230F0DDCC5E at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
+2026-09-18 20:29:48,990 [INFO] Interface Wi-Fi enabled
+2026-09-18 20:29:48,990 [INFO] MAC changed for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98} -> 02:30:F0:DD:CC:5E
+2026-09-18 20:30:07,575 [INFO] Machine GUID changed to: 8B741333-D5BE-40C9-8E3D-7103A37C8E79
+2026-09-18 20:30:07,576 [INFO] Disk serial changed to: FTTSV2ZJC4
+2026-09-18 20:30:07,577 [INFO] BIOS UUID changed to: 5D1547EB-05BA-4121-8364-20A907585138
+2026-09-18 20:30:07,577 [INFO] Motherboard serial changed to: 5HR3IRRW9ZLP
+2026-09-18 20:30:07,577 [INFO] Processor ID changed to: MXZSM0QSNPX987G5
+2026-09-18 20:30:07,577 [INFO] Selected HWID spoofing results:
+2026-09-18 20:30:07,577 [INFO] Machine GUID: Success
+2026-09-18 20:30:07,577 [INFO] Disk Serial: Success
+2026-09-18 20:30:07,577 [INFO] BIOS UUID: Success
+2026-09-18 20:30:07,577 [INFO] Motherboard Serial: Success
+2026-09-18 20:30:07,577 [INFO] Processor ID: Success
+2026-09-18 20:33:32,619 [INFO] HWID restoration results:
+2026-09-18 20:33:41,342 [INFO] Interface Ethernet disabled
+2026-09-18 20:33:41,342 [INFO] Removed NetworkAddress at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0001
+2026-09-18 20:33:41,945 [INFO] Interface Ethernet enabled
+2026-09-18 20:33:41,945 [INFO] MAC restored for Ethernet: Supporto disconnesso
+2026-09-18 20:40:00,704 [INFO] Machine GUID changed to: 5346C154-01EC-40CF-8AF8-91AA8498C47F
+2026-09-18 20:40:00,705 [INFO] Disk serial changed to: D5PBGGAMWU
+2026-09-18 20:40:00,706 [INFO] BIOS UUID changed to: 58990915-56B4-4BF7-B12E-93FEC0F2B08F
+2026-09-18 20:40:00,707 [INFO] Motherboard serial changed to: OAF9UVLMBWBG
+2026-09-18 20:40:00,707 [INFO] Processor ID changed to: Z6DJF1CVYH0UQQKI
+2026-09-18 20:40:00,707 [INFO] Selected HWID spoofing results:
+2026-09-18 20:40:00,707 [INFO] Machine GUID: Success
+2026-09-18 20:40:00,707 [INFO] Disk Serial: Success
+2026-09-18 20:40:00,707 [INFO] BIOS UUID: Success
+2026-09-18 20:40:00,707 [INFO] Motherboard Serial: Success
+2026-09-18 20:40:00,707 [INFO] Processor ID: Success
