@@ -1,0 +1,32 @@
+2026-09-17 22:12:31,390 [ERROR] Error loading saved MACs: Expecting value: line 1 column 1 (char 0)
+2026-09-17 22:12:31,391 [INFO] Saved original MAC for Ethernet: Supporto disconnesso
+2026-09-17 22:12:31,411 [ERROR] Registry backup failed: Command '['reg', 'export', 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\0001', 'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\data\\backup_0001_20260917221231.reg', '/y']' returned non-zero exit status 1.
+2026-09-17 22:12:31,971 [INFO] Interface Ethernet disabled
+2026-09-17 22:12:31,972 [INFO] Set NetworkAddress to 02618D9E38D0 at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0001
+2026-09-17 22:12:32,576 [INFO] Interface Ethernet enabled
+2026-09-17 22:12:32,576 [INFO] MAC changed for Ethernet: Supporto disconnesso -> 02:61:8D:9E:38:D0
+2026-09-17 22:13:53,645 [ERROR] Registry backup failed: Command '['reg', 'export', 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\0001', 'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\data\\backup_0001_20260917221353.reg', '/y']' returned non-zero exit status 1.
+2026-09-17 22:13:54,012 [INFO] Interface Ethernet disabled
+2026-09-17 22:13:54,013 [INFO] Set NetworkAddress to 02BBEA028E07 at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0001
+2026-09-17 22:13:54,632 [INFO] Interface Ethernet enabled
+2026-09-17 22:13:54,632 [INFO] MAC changed for Ethernet: Supporto disconnesso -> 02:BB:EA:02:8E:07
+2026-09-17 22:14:28,546 [INFO] Saved original MAC for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
+2026-09-17 22:14:28,562 [ERROR] Registry backup failed: Command '['reg', 'export', 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\0002', 'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\data\\backup_0002_20260917221428.reg', '/y']' returned non-zero exit status 1.
+2026-09-17 22:14:29,387 [INFO] Interface Wi-Fi disabled
+2026-09-17 22:14:29,387 [INFO] Set NetworkAddress to 02A27EEF9EF7 at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
+2026-09-17 22:14:33,267 [INFO] Interface Wi-Fi enabled
+2026-09-17 22:14:33,267 [INFO] MAC changed for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98} -> 02:A2:7E:EF:9E:F7
+2026-09-17 22:16:28,262 [INFO] Interface Wi-Fi disabled
+2026-09-17 22:16:28,263 [INFO] Removed NetworkAddress at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
+2026-09-17 22:16:30,912 [INFO] Interface Wi-Fi enabled
+2026-09-17 22:16:30,912 [INFO] MAC restored for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
+2026-09-17 22:19:30,001 [INFO] Saved original MAC for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
+2026-09-17 22:19:30,016 [ERROR] Registry backup failed: Command '['reg', 'export', 'SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\0002', 'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\data\\backup_0002_20260917221930.reg', '/y']' returned non-zero exit status 1.
+2026-09-17 22:19:30,653 [INFO] Interface Wi-Fi disabled
+2026-09-17 22:19:30,653 [INFO] Set NetworkAddress to 02462D6B43A5 at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
+2026-09-17 22:19:33,176 [INFO] Interface Wi-Fi enabled
+2026-09-17 22:19:33,176 [INFO] MAC changed for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98} -> 02:46:2D:6B:43:A5
+2026-09-17 22:22:14,565 [INFO] Interface Wi-Fi disabled
+2026-09-17 22:22:14,565 [INFO] Removed NetworkAddress at SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}\0002
+2026-09-17 22:22:16,448 [INFO] Interface Wi-Fi enabled
+2026-09-17 22:22:16,448 [INFO] MAC restored for Wi-Fi: \Device\Tcpip_{56124D0D-0BB2-4DB8-A3CD-7D94258E6C98}
