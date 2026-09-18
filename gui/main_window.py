@@ -6,7 +6,7 @@ import os
 from PyQt5.QtWidgets import (
     QAction, QApplication, QMainWindow, QTableWidget, QTableWidgetItem, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QLineEdit, QGroupBox,
-    QTextEdit, QMessageBox, QStatusBar, QFileDialog
+    QTextEdit, QMessageBox, QStatusBar, QFileDialog, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
@@ -14,6 +14,8 @@ from PyQt5.QtGui import QIcon
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from core.mac_spoofer import MacSpoofer
 from core.hwid_spoofer import HwidSpoofer
+from core.driver_utils import load_driver, unload_driver, send_ioctl
+from core.smbios_type1 import generate_random_uuid
 from gui.config_dialog import ConfigDialog
 
 
@@ -33,7 +35,6 @@ class WorkerThread(QThread):
             self.finished.emit(False, str(e))
 
 
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.init_ui()
         self.refresh_interfaces()
+        self._apply_startup_driver_config()
 
     def init_ui(self):
         self.setWindowTitle("Windows MAC & HWID Spoofer")
@@ -78,7 +80,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-
         iface_group = QGroupBox("Interfaccia di Rete")
         iface_layout = QVBoxLayout(iface_group)
 
@@ -100,6 +101,51 @@ class MainWindow(QMainWindow):
         iface_layout.addLayout(row2)
 
         layout.addWidget(iface_group)
+
+        # --- Driver Kernel Group ---
+        driver_group = QGroupBox("Controllo Driver Kernel")
+        driver_layout = QVBoxLayout(driver_group)
+
+        top_row = QHBoxLayout()
+        self.btn_load_driver = QPushButton("Carica Driver")
+        self.btn_unload_driver = QPushButton("Scarica Driver")
+        self.btn_unload_driver.setEnabled(False)
+        self.lbl_driver_status = QLabel("Stato: Non Caricato")
+        self.lbl_driver_status.setStyleSheet("font-weight: bold; color: red;")
+
+        top_row.addWidget(self.btn_load_driver)
+        top_row.addWidget(self.btn_unload_driver)
+        top_row.addStretch()
+        top_row.addWidget(self.lbl_driver_status)
+        driver_layout.addLayout(top_row)
+
+        hooks_row = QHBoxLayout()
+        self.cb_firmware_hook = QCheckBox("Firmware Hook (0x80002000)")
+        self.cb_hal_hook = QCheckBox("HAL Hook (0x80002008)")
+        self.cb_smbios_hook = QCheckBox("SMBIOS Hook (0x80002010)")
+
+        self.cb_firmware_hook.setEnabled(False)
+        self.cb_hal_hook.setEnabled(False)
+        self.cb_smbios_hook.setEnabled(False)
+
+        hooks_row.addWidget(self.cb_firmware_hook)
+        hooks_row.addWidget(self.cb_hal_hook)
+        hooks_row.addWidget(self.cb_smbios_hook)
+        driver_layout.addLayout(hooks_row)
+
+        uuid_row = QHBoxLayout()
+        self.btn_generate_uuid = QPushButton("Genera UUID")
+        self.btn_generate_uuid.setEnabled(False)
+        self.txt_new_uuid = QLineEdit()
+        self.txt_new_uuid.setReadOnly(True)
+        self.txt_new_uuid.setPlaceholderText("Nuovo SMBIOS UUID...")
+
+        uuid_row.addWidget(self.btn_generate_uuid)
+        uuid_row.addWidget(self.txt_new_uuid)
+        driver_layout.addLayout(uuid_row)
+
+        layout.addWidget(driver_group)
+        # ---------------------------
 
         mac_group = QGroupBox("Configurazione MAC")
         mac_layout = QVBoxLayout(mac_group)
@@ -130,7 +176,6 @@ class MainWindow(QMainWindow):
         mac_layout.addLayout(row5)
 
         layout.addWidget(mac_group)
-
 
         hwid_group = QGroupBox("Hardware ID (HWID)")
         hwid_layout = QVBoxLayout(hwid_group)
@@ -173,6 +218,118 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusBar)
         self.statusBar.showMessage("Pronto")
 
+        # Connessioni segnali driver
+        self.btn_load_driver.clicked.connect(self.on_load_driver)
+        self.btn_unload_driver.clicked.connect(self.on_unload_driver)
+        self.btn_generate_uuid.clicked.connect(self.on_generate_uuid)
+        self.cb_firmware_hook.stateChanged.connect(self.on_hook_state_changed)
+        self.cb_hal_hook.stateChanged.connect(self.on_hook_state_changed)
+        self.cb_smbios_hook.stateChanged.connect(self.on_hook_state_changed)
+
+    def _apply_startup_driver_config(self):
+        """Applica le preferenze di avvio dal config dialog."""
+        if self.config.get("start_with_driver", False):
+            self.on_load_driver()
+            if self.config.get("auto_enable_hooks", False):
+                # Blocca i segnali per evitare chiamate IOCTL multiple durante l'avvio
+                self.cb_firmware_hook.blockSignals(True)
+                self.cb_hal_hook.blockSignals(True)
+                self.cb_smbios_hook.blockSignals(True)
+                
+                self.cb_firmware_hook.setChecked(True)
+                self.cb_hal_hook.setChecked(True)
+                self.cb_smbios_hook.setChecked(True)
+                
+                self.cb_firmware_hook.blockSignals(False)
+                self.cb_hal_hook.blockSignals(False)
+                self.cb_smbios_hook.blockSignals(False)
+                
+                # Invia gli IOCTL manualmente una volta sola
+                self._send_ioctl_safe(0x80002000, 1)
+                self._send_ioctl_safe(0x80002008, 1)
+                self._send_ioctl_safe(0x80002010, 1)
+
+    def _set_driver_widgets_enabled(self, enabled):
+        """Abilita o disabilita i widget dipendenti dallo stato del driver."""
+        self.btn_unload_driver.setEnabled(enabled)
+        self.btn_load_driver.setEnabled(not enabled)
+        self.cb_firmware_hook.setEnabled(enabled)
+        self.cb_hal_hook.setEnabled(enabled)
+        self.cb_smbios_hook.setEnabled(enabled)
+        self.btn_generate_uuid.setEnabled(enabled)
+
+    def _send_ioctl_safe(self, ioctl_code, payload):
+        """Wrapper sicuro per inviare IOCTL senza crashare la GUI."""
+        try:
+            send_ioctl(ioctl_code, payload)
+            return True
+        except Exception as e:
+            self.log_message(f"Errore IOCTL 0x{ioctl_code:08X}: {e}")
+            QMessageBox.warning(self, "Errore IOCTL", f"Fallita comunicazione con il driver:\n{str(e)}")
+            return False
+
+    def on_load_driver(self):
+        try:
+            load_driver()
+            self.lbl_driver_status.setText("Stato: Caricato")
+            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: green;")
+            self._set_driver_widgets_enabled(True)
+            self.log_message("Driver kernel caricato con successo.")
+        except Exception as e:
+            QMessageBox.critical(self, "Errore Driver", f"Impossibile caricare il driver:\n{str(e)}")
+            self.log_message(f"Errore caricamento driver: {e}")
+
+    def on_unload_driver(self):
+        try:
+            # Disattiva tutti gli hook prima di scaricare
+            if self.cb_firmware_hook.isChecked():
+                self.cb_firmware_hook.setChecked(False)
+            if self.cb_hal_hook.isChecked():
+                self.cb_hal_hook.setChecked(False)
+            if self.cb_smbios_hook.isChecked():
+                self.cb_smbios_hook.setChecked(False)
+
+            unload_driver()
+            self.lbl_driver_status.setText("Stato: Non Caricato")
+            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: red;")
+            self._set_driver_widgets_enabled(False)
+            self.log_message("Driver kernel scaricato.")
+        except Exception as e:
+            QMessageBox.critical(self, "Errore Driver", f"Impossibile scaricare il driver:\n{str(e)}")
+            self.log_message(f"Errore scaricamento driver: {e}")
+
+    def on_hook_state_changed(self, state):
+        sender = self.sender()
+        if not sender:
+            return
+
+        ioctl_map = {
+            self.cb_firmware_hook: 0x80002000,
+            self.cb_hal_hook: 0x80002008,
+            self.cb_smbios_hook: 0x80002010,
+        }
+
+        ioctl_code = ioctl_map.get(sender)
+        if ioctl_code is None:
+            return
+
+        # Qt.Checked è 2, inviamo 1 per abilitare e 0 per disabilitare
+        payload = 1 if state == Qt.Checked else 0
+        
+        if not self._send_ioctl_safe(ioctl_code, payload):
+            # Se fallisce, ripristina lo stato della checkbox senza triggerare di nuovo il segnale
+            sender.blockSignals(True)
+            sender.setChecked(state != Qt.Checked)
+            sender.blockSignals(False)
+
+    def on_generate_uuid(self):
+        try:
+            new_uuid = generate_random_uuid()
+            self.txt_new_uuid.setText(str(new_uuid))
+            self.log_message(f"Nuovo UUID generato: {new_uuid}")
+        except Exception as e:
+            QMessageBox.warning(self, "Errore UUID", f"Impossibile generare l'UUID:\n{str(e)}")
+            self.log_message(f"Errore generazione UUID: {e}")
 
     def log_message(self, msg):
         self.txt_log.append(msg)
@@ -204,7 +361,6 @@ class MainWindow(QMainWindow):
         new_mac = self.spoofer.generate_random_mac()
         self.txt_custom_mac.setText(new_mac)
         self.log_message(f"MAC casuale generato: {new_mac}")
-
 
     def apply_mac(self):
         idx = self.combo_interfaces.currentIndex()
@@ -250,7 +406,6 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.on_restore_finished)
         self.worker.start()
 
-
     def on_change_finished(self, success, msg):
         self.set_buttons_enabled(True)
         if success:
@@ -280,7 +435,6 @@ class MainWindow(QMainWindow):
         self.btn_spoof_all.setEnabled(enabled)
         self.btn_restore_hwid.setEnabled(enabled)
         self.btn_refresh_hwid.setEnabled(enabled)
-
 
     def refresh_hwid_info(self):
         if not self.spoofer.is_admin():
@@ -324,7 +478,6 @@ class MainWindow(QMainWindow):
             self.worker = WorkerThread(self.hwid_spoofer.spoof_selected_hwids)
             self.worker.finished.connect(self.on_hwid_spoof_finished)
             self.worker.start()
-
 
     def on_hwid_spoof_finished(self, success, msg):
         self.set_buttons_enabled(True)
@@ -376,7 +529,6 @@ class MainWindow(QMainWindow):
             self.log_message(f"Errore durante il ripristino HWID: {msg}")
             self.statusBar.showMessage("Errore")
             QMessageBox.critical(self, "Errore", f"Impossibile completare il ripristino HWID:\n{msg}")
-
 
     def show_config_dialog(self):
         dialog = ConfigDialog(self.config, self)
@@ -430,4 +582,3 @@ def run_gui():
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
-
