@@ -371,6 +371,8 @@ HvRedirectToSmbiosShadow(
     _In_ ULONG64 GuestPhysicalAddress
     );
 
+BOOLEAN HvRollbackLabSmbiosEptCurrentProcessor(VOID);
+
 NTSTATUS HvCreateSmbiosShadow(VOID);
 
 NTSTATUS
