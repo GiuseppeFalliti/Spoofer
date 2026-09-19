@@ -91,7 +91,7 @@ HvHypercall ENDP
 ; ULONG HvInvept(ULONG Type, PVOID Descriptor)
 ; Must be called in VMX root operation.
 HvInvept PROC
-    invept  rcx, [rdx]
+    invept  rcx, oword ptr [rdx]
     jc      HvInveptFailed
     jz      HvInveptFailed
     xor     eax, eax
