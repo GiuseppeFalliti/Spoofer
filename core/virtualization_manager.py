@@ -160,12 +160,12 @@ class VirtualizationManager:
         return None
 
     @staticmethod
-    def _resume_command() -> str:
+    def _self_command(flag: str) -> str:
         if getattr(sys, "frozen", False):
-            parts = [sys.executable, "--resume-vtx-lab"]
+            parts = [sys.executable, flag]
         else:
             main_path = os.path.abspath(sys.argv[0])
-            parts = [sys.executable, main_path, "--resume-vtx-lab"]
+            parts = [sys.executable, main_path, flag]
         return subprocess.list2cmdline(parts)
 
     @staticmethod
@@ -237,12 +237,52 @@ class VirtualizationManager:
             check=False,
         )
 
-    def cleanup_pending_state(self) -> None:
+    @staticmethod
+    def current_boot_guid() -> Optional[str]:
+        result = VirtualizationManager._run(
+            ["bcdedit.exe", "/enum", "{current}", "/v"],
+            check=False,
+        )
+        text = (result.stdout or "") + "\n" + (result.stderr or "")
+        match = re.search(
+            r"\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+            r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}",
+            text,
+        )
+        return match.group(0) if match else None
+
+    def _schedule_cleanup(self, state: dict) -> None:
+        state = dict(state)
+        state["phase"] = "cleanup_pending"
+        cleanup_command = self._self_command("--cleanup-vtx-lab")
+        state["cleanup_command"] = cleanup_command
+        self._save_state(state)
+        self._set_runonce(cleanup_command)
+
+    def cleanup_after_lab_if_safe(self) -> bool:
+        """Rimuove la voce Lab solo quando non e' la voce Windows corrente."""
         state = self.load_state()
+        if not state:
+            self._clear_runonce()
+            return True
+
+        lab_guid = state.get("boot_guid")
+        current_guid = self.current_boot_guid()
+
+        if (
+            lab_guid
+            and current_guid
+            and str(lab_guid).lower() == str(current_guid).lower()
+        ):
+            # Siamo ancora avviati dalla voce Lab. Rimanda la pulizia al
+            # prossimo logon/boot invece di cancellare la voce corrente.
+            self._schedule_cleanup(state)
+            return False
+
         self._clear_runonce()
-        if state:
-            self._delete_boot_entry(state.get("boot_guid"))
+        self._delete_boot_entry(lab_guid)
         self._delete_state()
+        return True
 
     def prepare_one_shot_lab_boot(self) -> str:
         if not self.is_admin():
@@ -255,10 +295,11 @@ class VirtualizationManager:
             )
 
         stale = self.load_state()
-        if stale:
-            self._delete_boot_entry(stale.get("boot_guid"))
-            self._clear_runonce()
-            self._delete_state()
+        if stale and not self.cleanup_after_lab_if_safe():
+            raise RuntimeError(
+                "La sessione VT-x Lab precedente e' ancora attiva. "
+                "Riavvia Windows normalmente prima di prepararne una nuova."
+            )
 
         created_guid = None
         try:
@@ -305,7 +346,7 @@ class VirtualizationManager:
                 ]
             )
 
-            resume_command = self._resume_command()
+            resume_command = self._self_command("--resume-vtx-lab")
             self._set_runonce(resume_command)
 
             self._save_state(
@@ -371,7 +412,8 @@ class VirtualizationManager:
         state = self.load_state()
 
         if self.is_hypervisor_present():
-            self.cleanup_pending_state()
+            if state:
+                self._schedule_cleanup(state)
             raise RuntimeError(
                 "Il riavvio VT-x Lab non ha disattivato il Windows hypervisor. "
                 "Nessuna configurazione di sicurezza e' stata forzata."
@@ -384,12 +426,14 @@ class VirtualizationManager:
 
         capabilities = self.query_driver_capabilities()
 
-        # Il boot one-shot e' gia' stato consumato. Prova anche a rimuovere
-        # la voce copiata; se Windows non consente la rimozione della voce
-        # corrente, restera' innocua e potra' essere rimossa al prossimo avvio.
-        self._clear_runonce()
+        # Non cancellare la voce BCD dalla sessione che la sta usando.
+        # Pianifica invece una pulizia al prossimo logon/boot; il relativo
+        # handler verifica che la voce Lab non sia piu' quella corrente.
         if state:
-            self._delete_boot_entry(state.get("boot_guid"))
-        self._delete_state()
+            state = dict(state)
+            state["phase"] = "lab_active"
+            self._schedule_cleanup(state)
+        else:
+            self._clear_runonce()
 
         return capabilities
