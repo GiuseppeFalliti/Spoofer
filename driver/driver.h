@@ -18,6 +18,10 @@
 #define IOCTL_SET_SMBIOS_HOOK      ((ULONG)0x80002010)
 #define IOCTL_CLEAR_SMBIOS_HOOK    ((ULONG)0x80002014)
 
+// Safe, METHOD_BUFFERED test path for retrieving the generated SMBIOS blob.
+#define IOCTL_QUERY_FAKE_SMBIOS \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 #define SMBIOS_BLOB_CAPACITY 512
 
 #pragma pack(push, 1)
@@ -52,6 +56,14 @@ _Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
 DRIVER_DISPATCH HwidDeviceControl;
 
 DRIVER_UNLOAD HwidUnload;
+
+NTSTATUS
+Hooked_NtQuerySystemInformation(
+    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+    _In_ ULONG SystemInformationLength,
+    _Out_opt_ PULONG ReturnLength
+    );
 
 NTSTATUS
 BuildFakeSmbiosBlob(
