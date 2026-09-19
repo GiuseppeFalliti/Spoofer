@@ -244,9 +244,9 @@ class VirtualizationManager:
         )
 
     @staticmethod
-    def current_boot_guid() -> Optional[str]:
+    def _boot_guid(alias: str) -> Optional[str]:
         result = VirtualizationManager._run(
-            ["bcdedit.exe", "/enum", "{current}", "/v"],
+            ["bcdedit.exe", "/enum", alias, "/v"],
             check=False,
         )
         text = (result.stdout or "") + "\n" + (result.stderr or "")
@@ -256,6 +256,55 @@ class VirtualizationManager:
             text,
         )
         return match.group(0) if match else None
+
+    @staticmethod
+    def current_boot_guid() -> Optional[str]:
+        return VirtualizationManager._boot_guid("{current}")
+
+    @staticmethod
+    def default_boot_guid() -> Optional[str]:
+        return VirtualizationManager._boot_guid("{default}")
+
+    def is_current_lab_session(self) -> bool:
+        state = self.load_state()
+        if not state:
+            return False
+
+        lab_guid = state.get("boot_guid")
+        current_guid = self.current_boot_guid()
+        return bool(
+            lab_guid
+            and current_guid
+            and str(lab_guid).lower() == str(current_guid).lower()
+        )
+
+    def return_to_normal_boot(self) -> str:
+        """Imposta il prossimo boot sulla voce Windows originale/default."""
+        state = self.load_state() or {}
+
+        return_guid = state.get("return_boot_guid")
+        if not return_guid:
+            return_guid = self.default_boot_guid()
+
+        if not return_guid:
+            raise RuntimeError(
+                "Impossibile determinare la voce Windows normale da usare "
+                "per il prossimo avvio."
+            )
+
+        self._run(
+            [
+                "bcdedit.exe",
+                "/bootsequence",
+                return_guid,
+            ]
+        )
+
+        state = dict(state)
+        state["phase"] = "return_to_normal_pending"
+        state["return_boot_guid"] = return_guid
+        self._schedule_cleanup(state)
+        return return_guid
 
     def _schedule_cleanup(self, state: dict) -> None:
         state = dict(state)
@@ -306,6 +355,12 @@ class VirtualizationManager:
             raise RuntimeError(
                 "La sessione VT-x Lab precedente e' ancora attiva. "
                 "Riavvia Windows normalmente prima di prepararne una nuova."
+            )
+
+        source_boot_guid = self.current_boot_guid()
+        if not source_boot_guid:
+            raise RuntimeError(
+                "Impossibile determinare il GUID della voce Windows corrente."
             )
 
         created_guid = None
@@ -372,9 +427,10 @@ class VirtualizationManager:
 
             self._save_state(
                 {
-                    "version": 1,
+                    "version": 2,
                     "phase": "prepared",
                     "boot_guid": created_guid,
+                    "return_boot_guid": source_boot_guid,
                     "resume_command": resume_command,
                 }
             )
