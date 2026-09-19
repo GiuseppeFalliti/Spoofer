@@ -5,11 +5,36 @@ import os
 # ---------------------------------------------------------------------------
 # Percorsi
 # ---------------------------------------------------------------------------
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-MAIN_PY    = os.path.join(BASE_DIR, "main.py")
-DRIVER_SYS = os.path.join(BASE_DIR, "hwid_virtualization_driver.sys")
-ICON_ICO   = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
-EXE_NAME   = "HWIDSpoofer"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MAIN_PY = os.path.join(BASE_DIR, "main.py")
+ICON_ICO = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
+EXE_NAME = "HWIDSpoofer"
+
+DRIVER_CANDIDATES = [
+    os.path.join(
+        BASE_DIR,
+        "driver",
+        "x64",
+        "ReleaseTest",
+        "hwid_virtualization_driver.sys",
+    ),
+    os.path.join(
+        BASE_DIR,
+        "driver",
+        "x64",
+        "Release",
+        "hwid_virtualization_driver.sys",
+    ),
+    os.path.join(BASE_DIR, "hwid_virtualization_driver.sys"),
+]
+
+
+def find_driver_sys():
+    """Preferisce la build WDK piu' recente del laboratorio rispetto al .sys root."""
+    for path in DRIVER_CANDIDATES:
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def check_pyinstaller() -> None:
@@ -40,12 +65,15 @@ def build() -> None:
     else:
         print(f"[OK] Entry point trovato  : {MAIN_PY}")
 
-    if not os.path.isfile(DRIVER_SYS):
-        print(f"[AVVISO] Driver non trovato: {DRIVER_SYS}")
-        print("         Il file .sys NON verrà incluso nell'eseguibile.")
+    driver_sys = find_driver_sys()
+    if driver_sys is None:
+        print("[AVVISO] Driver non trovato nei percorsi previsti:")
+        for candidate in DRIVER_CANDIDATES:
+            print(f"         - {candidate}")
+        print("         Il file .sys NON verra' incluso nell'eseguibile.")
         include_driver = False
     else:
-        print(f"[OK] Driver trovato        : {DRIVER_SYS}")
+        print(f"[OK] Driver trovato        : {driver_sys}")
         include_driver = True
 
     if os.path.isfile(ICON_ICO):
@@ -62,6 +90,7 @@ def build() -> None:
         sys.executable, "-m", "PyInstaller",
         "--onefile",                       # singolo .exe
         "--windowed",                      # nessuna console
+        "--uac-admin",                     # manifesta richiesta UAC all'avvio
         f"--name={EXE_NAME}",             # nome dell'eseguibile
         # --- PyQt5 ---
         "--hidden-import=PyQt5",
@@ -75,6 +104,7 @@ def build() -> None:
         "--hidden-import=core.registry_utils",
         "--hidden-import=core.driver_utils",
         "--hidden-import=core.smbios_type1",
+        "--hidden-import=core.virtualization_manager",
         # --- Moduli gui del progetto ---
         "--hidden-import=gui",
         "--hidden-import=gui.main_window",
@@ -92,7 +122,7 @@ def build() -> None:
     # Driver kernel (.sys) — incluso nella radice della cartella temporanea
     if include_driver:
         # Sintassi Windows per --add-data: "sorgente;destinazione"
-        cmd.append(f"--add-data={DRIVER_SYS};.")
+        cmd.append(f"--add-data={driver_sys};.")
 
     # config.json — copiato accanto all'exe (non nella _MEI temporanea)
     config_json = os.path.join(BASE_DIR, "config.json")
