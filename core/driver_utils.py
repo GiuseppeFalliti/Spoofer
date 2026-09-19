@@ -213,6 +213,9 @@ def unload_driver(service_name: str, delete_service: bool = False) -> bool:
 
 def send_ioctl(device_path: str, ioctl_code: int, in_buffer: bytes = b'', out_buffer_size: int = 0) -> tuple:
     handle = None
+    # Mantiene compatibile il ritorno (success, data), ma rende disponibile
+    # alla GUI il codice Win32 dell'ultimo errore DeviceIoControl.
+    send_ioctl.last_error = None
     try:
         handle = win32file.CreateFile(
             device_path,
@@ -230,9 +233,13 @@ def send_ioctl(device_path: str, ioctl_code: int, in_buffer: bytes = b'', out_bu
             out_buffer_size,
             None
         )
+        send_ioctl.last_error = 0
         print(f"[+] IOCTL 0x{ioctl_code:08X} inviato con successo a '{device_path}'.")
         return True, result
     except pywintypes.error as e:
+        send_ioctl.last_error = getattr(e, "winerror", None)
+        if send_ioctl.last_error is None and e.args:
+            send_ioctl.last_error = e.args[0]
         print(f"[-] Errore durante l'invio dell'IOCTL: {e}")
         return False, b''
     finally:

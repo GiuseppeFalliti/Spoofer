@@ -25,6 +25,12 @@ from gui.config_dialog import ConfigDialog
 SERVICE_NAME = "HWIDVirtualizationDriver"
 DEVICE_PATH  = r"\\.\HwidSpoofer"
 
+# Function code definito nel driver:
+# CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+IOCTL_QUERY_FAKE_SMBIOS_FUNCTION = 0x801
+# DeviceIoControl richiede il valore CTL_CODE completo, non il solo function code.
+IOCTL_QUERY_FAKE_SMBIOS = 0x222004
+
 
 class WorkerThread(QThread):
     finished = pyqtSignal(bool, str)
@@ -143,12 +149,15 @@ class MainWindow(QMainWindow):
         uuid_row = QHBoxLayout()
         self.btn_generate_uuid = QPushButton("Genera UUID")
         self.btn_generate_uuid.setEnabled(False)
+        self.btn_test_smbios = QPushButton("Testa SMBIOS")
+        self.btn_test_smbios.setEnabled(False)
         self.txt_new_uuid = QLineEdit()
         self.txt_new_uuid.setReadOnly(True)
         self.txt_new_uuid.setPlaceholderText("Nuovo SMBIOS UUID...")
 
         uuid_row.addWidget(self.btn_generate_uuid)
         uuid_row.addWidget(self.txt_new_uuid)
+        uuid_row.addWidget(self.btn_test_smbios)
         driver_layout.addLayout(uuid_row)
 
         layout.addWidget(driver_group)
@@ -229,6 +238,7 @@ class MainWindow(QMainWindow):
         self.btn_load_driver.clicked.connect(self.on_load_driver)
         self.btn_unload_driver.clicked.connect(self.on_unload_driver)
         self.btn_generate_uuid.clicked.connect(self.on_generate_uuid)
+        self.btn_test_smbios.clicked.connect(self.test_smbios_hook)
         self.cb_firmware_hook.stateChanged.connect(self.on_hook_state_changed)
         self.cb_hal_hook.stateChanged.connect(self.on_hook_state_changed)
         self.cb_smbios_hook.stateChanged.connect(self.on_hook_state_changed)
@@ -264,12 +274,18 @@ class MainWindow(QMainWindow):
         self.cb_hal_hook.setEnabled(enabled)
         self.cb_smbios_hook.setEnabled(enabled)
         self.btn_generate_uuid.setEnabled(enabled)
+        self.btn_test_smbios.setEnabled(enabled)
 
     def _send_ioctl_safe(self, ioctl_code, payload):
         """Wrapper sicuro per inviare IOCTL senza crashare la GUI."""
         try:
             in_buffer = payload.to_bytes(4, byteorder="little") if isinstance(payload, int) else payload
-            send_ioctl(DEVICE_PATH, ioctl_code, in_buffer)
+            success, _ = send_ioctl(DEVICE_PATH, ioctl_code, in_buffer)
+            if not success:
+                error_code = getattr(send_ioctl, "last_error", None)
+                if error_code is not None:
+                    raise RuntimeError(f"DeviceIoControl fallita (Win32 error {error_code})")
+                raise RuntimeError("DeviceIoControl fallita")
             return True
         except Exception as e:
             self.log_message(f"Errore IOCTL 0x{ioctl_code:08X}: {e}")
@@ -343,6 +359,68 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Errore UUID", f"Impossibile generare l'UUID:\n{str(e)}")
             self.log_message(f"Errore generazione UUID: {e}")
+
+    @staticmethod
+    def _format_hex_dump(data, width=16):
+        """Formatta bytes in righe offset + hex + ASCII."""
+        lines = []
+        for offset in range(0, len(data), width):
+            chunk = data[offset:offset + width]
+            hex_part = " ".join(f"{byte:02X}" for byte in chunk)
+            ascii_part = "".join(chr(byte) if 32 <= byte <= 126 else "." for byte in chunk)
+            lines.append(f"{offset:04X}  {hex_part:<{width * 3 - 1}}  {ascii_part}")
+        return "\n".join(lines)
+
+    def test_smbios_hook(self):
+        """Richiede al driver il blob SMBIOS fittizio e lo mostra in formato esadecimale."""
+        if not self.btn_unload_driver.isEnabled():
+            QMessageBox.warning(
+                self,
+                "Driver non caricato",
+                "Carica il driver kernel prima di eseguire il test SMBIOS."
+            )
+            return
+
+        success, data = send_ioctl(
+            DEVICE_PATH,
+            IOCTL_QUERY_FAKE_SMBIOS,
+            b"",
+            512
+        )
+
+        if not success:
+            error_code = getattr(send_ioctl, "last_error", None)
+            error_text = (
+                f"Codice errore Win32: {error_code}"
+                if error_code is not None
+                else "Codice errore Win32 non disponibile"
+            )
+            self.log_message(f"Test SMBIOS fallito. {error_text}")
+            QMessageBox.critical(
+                self,
+                "Errore Test SMBIOS",
+                f"Impossibile ricevere il blob SMBIOS dal driver.\n{error_text}"
+            )
+            return
+
+        if not data:
+            self.log_message("Test SMBIOS completato, ma il driver ha restituito 0 byte.")
+            QMessageBox.warning(
+                self,
+                "Test SMBIOS",
+                "La chiamata IOCTL è riuscita, ma il driver ha restituito un buffer vuoto."
+            )
+            return
+
+        hex_dump = self._format_hex_dump(data)
+        self.log_message(f"Test SMBIOS riuscito: ricevuti {len(data)} byte.")
+
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Information)
+        message.setWindowTitle("Test SMBIOS")
+        message.setText(f"Ricevuti {len(data)} byte dal driver:\n\n{hex_dump}")
+        message.setStandardButtons(QMessageBox.Ok)
+        message.exec_()
 
     def log_message(self, msg):
         self.txt_log.append(msg)
