@@ -23,7 +23,7 @@ from gui.config_dialog import ConfigDialog
 # e al symbolic link esposto dal driver nel namespace di I/O di Windows.
 # ---------------------------------------------------------------------------
 SERVICE_NAME = "HWIDVirtualizationDriver"
-DEVICE_PATH  = r"\\.\HWIDVirtualizationDriver"
+DEVICE_PATH  = r"\\.\HwidSpoofer"
 
 
 class WorkerThread(QThread):
