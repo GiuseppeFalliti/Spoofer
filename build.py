@@ -30,6 +30,44 @@ def find_driver_sys():
     return None
 
 
+def choose_dist_dir() -> str:
+    """Usa dist/ normalmente; se l'EXE esistente e' bloccato, usa una cartella alternativa."""
+    preferred = os.path.join(BASE_DIR, "dist")
+    preferred_exe = os.path.join(preferred, f"{EXE_NAME}.exe")
+
+    if not os.path.exists(preferred_exe):
+        return preferred
+
+    try:
+        os.remove(preferred_exe)
+        return preferred
+    except PermissionError:
+        print(
+            f"[AVVISO] {preferred_exe} e' in uso e non puo' essere sostituito."
+        )
+    except OSError as exc:
+        print(
+            f"[AVVISO] Impossibile rimuovere il vecchio EXE ({exc}). "
+            "Uso una cartella di output alternativa."
+        )
+
+    for index in range(1, 100):
+        suffix = "dist_next" if index == 1 else f"dist_next_{index}"
+        candidate = os.path.join(BASE_DIR, suffix)
+        candidate_exe = os.path.join(candidate, f"{EXE_NAME}.exe")
+
+        if not os.path.exists(candidate_exe):
+            return candidate
+
+        try:
+            os.remove(candidate_exe)
+            return candidate
+        except OSError:
+            continue
+
+    raise RuntimeError("Impossibile trovare una cartella di output libera.")
+
+
 def check_pyinstaller() -> None:
     """Installa PyInstaller se non è disponibile nell'ambiente corrente."""
     try:
@@ -84,11 +122,16 @@ def build() -> None:
     # ------------------------------------------------------------------
     # Costruzione dei parametri di PyInstaller
     # ------------------------------------------------------------------
+    dist_dir = choose_dist_dir()
+    print(f"[OK] Output build           : {dist_dir}")
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",                       # singolo .exe
         "--windowed",                      # nessuna console
         "--uac-admin",                     # manifesta richiesta UAC all'avvio
+        "--noconfirm",                     # non fermarsi su artefatti precedenti
+        f"--distpath={dist_dir}",          # fallback se dist\\HWIDSpoofer.exe e' bloccato
         f"--name={EXE_NAME}",             # nome dell'eseguibile
         # --- PyQt5 ---
         "--hidden-import=PyQt5",
@@ -148,7 +191,7 @@ def build() -> None:
 
     print("-" * 60)
     if result.returncode == 0:
-        exe_path = os.path.join(BASE_DIR, "dist", f"{EXE_NAME}.exe")
+        exe_path = os.path.join(dist_dir, f"{EXE_NAME}.exe")
         print(f"[OK] Build completata con successo!")
         print(f"     Eseguibile: {exe_path}")
     else:
