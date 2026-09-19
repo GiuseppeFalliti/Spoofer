@@ -278,8 +278,8 @@ HvInitialize(
     }
 
     g_HvState.CpuContexts =
-        (PHV_CPU_CONTEXT)ExAllocatePoolWithTag(
-            NonPagedPoolNx,
+        (PHV_CPU_CONTEXT)ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
             sizeof(HV_CPU_CONTEXT) *
                 g_HvState.ProcessorCount,
             HV_POOL_TAG
