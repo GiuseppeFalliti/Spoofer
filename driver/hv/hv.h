@@ -405,6 +405,7 @@ DECLSPEC_NORETURN VOID HvFatalVmInstructionFailure(_In_ ULONG FailureCode);
 
 ULONG HvVmxLaunch(VOID);
 ULONG64 HvHypercall(_In_ ULONG64 Operation);
+ULONG HvInvept(_In_ ULONG Type, _In_ PVOID Descriptor);
 VOID HvVmExitStub(VOID);
 
 USHORT HvReadEs(VOID);
