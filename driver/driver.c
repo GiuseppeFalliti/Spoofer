@@ -458,6 +458,81 @@ HwidDeviceControl(
             );
         break;
 
+    case IOCTL_CHECK_VTX_SUPPORT:
+    {
+        PHV_CAPABILITY_QUERY capabilities;
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < sizeof(HV_CAPABILITY_QUERY)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+
+        capabilities =
+            (PHV_CAPABILITY_QUERY)Irp->AssociatedIrp.SystemBuffer;
+
+        RtlZeroMemory(
+            capabilities,
+            sizeof(*capabilities)
+            );
+
+        HvQueryCapabilities(
+            &capabilities->VtxSupported,
+            &capabilities->EptSupported,
+            &capabilities->VmxBlocked,
+            &capabilities->HypervisorPresent,
+            &capabilities->ProcessorCount
+            );
+
+        information = sizeof(*capabilities);
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer] VT-x probe: vmx=%u ept=%u blocked=%u hypervisor=%u cpus=%lu\n",
+            capabilities->VtxSupported,
+            capabilities->EptSupported,
+            capabilities->VmxBlocked,
+            capabilities->HypervisorPresent,
+            capabilities->ProcessorCount
+            );
+
+        break;
+    }
+
+    case IOCTL_CHECK_HYPERVISOR:
+    {
+        PUCHAR output;
+        UCHAR vmx;
+        UCHAR ept;
+        UCHAR blocked;
+        UCHAR hypervisor;
+        ULONG processorCount;
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < sizeof(UCHAR)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+
+        HvQueryCapabilities(
+            &vmx,
+            &ept,
+            &blocked,
+            &hypervisor,
+            &processorCount
+            );
+
+        output = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
+        output[0] = hypervisor;
+        information = sizeof(UCHAR);
+        break;
+    }
+
     case IOCTL_START_HYPERVISOR:
         status = HvStartVmx();
 
