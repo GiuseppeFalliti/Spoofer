@@ -23,7 +23,7 @@ from gui.config_dialog import ConfigDialog
 # e al symbolic link esposto dal driver nel namespace di I/O di Windows.
 # ---------------------------------------------------------------------------
 SERVICE_NAME = "HWIDVirtualizationDriver"
-DEVICE_PATH  = r"\\.\HWIDVirtualizationDriver"
+DEVICE_PATH  = r"\\.\HwidSpoofer"
 
 # Function code definito nel driver:
 # CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
