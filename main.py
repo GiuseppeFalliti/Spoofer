@@ -81,7 +81,7 @@ def _handle_virtualization_bootstrap() -> bool:
 
     if cleanup_requested:
         try:
-            manager.cleanup_after_lab_if_safe()
+            cleaned = manager.cleanup_after_lab_if_safe()
         except Exception as exc:
             _msgbox(
                 "Pulizia VT-x Lab",
@@ -89,7 +89,14 @@ def _handle_virtualization_bootstrap() -> bool:
                 f"temporanea di boot:\n\n{exc}",
                 icon=0x30,
             )
-        return True
+            return True
+
+        # Se siamo ancora dentro la voce Lab, la pulizia e' stata rimandata.
+        if not cleaned:
+            return True
+
+        # Siamo tornati nel Windows normale: continua il bootstrap. Se
+        # Hyper-V e' nuovamente attivo verra' proposta una nuova Lab pulita.
 
     if resume_requested:
         try:
@@ -134,6 +141,53 @@ def _handle_virtualization_bootstrap() -> bool:
                 icon=0x30,
             )
         return True
+
+    # Recovery automatico: se l'utente e' ancora avviato dalla vecchia voce
+    # Lab e quella sessione non ha realmente liberato VMX, non tentare di
+    # creare una seconda Lab sopra la prima. Torna prima al Windows normale.
+    if manager.is_current_lab_session():
+        try:
+            stale_hypervisor_present = manager.is_hypervisor_present()
+        except Exception as exc:
+            _msgbox(
+                "VT-x Lab - stato non verificabile",
+                f"Impossibile verificare la sessione Lab corrente:\n\n{exc}",
+                icon=0x30,
+            )
+            return True
+
+        if stale_hypervisor_present:
+            confirmed = _ask_yes_no(
+                "Ripristinare Windows normale?",
+                "Sei ancora avviato dalla precedente voce VT-x Lab, ma "
+                "l'hypervisor Windows risulta ancora attivo.\n\n"
+                "L'applicazione deve prima tornare a Windows 11 normale, "
+                "rimuovere la vecchia voce temporanea e poi creare una nuova "
+                "sessione VT-x Lab aggiornata.\n\n"
+                "Riavviare ora nel Windows normale?",
+            )
+            if not confirmed:
+                return True
+
+            try:
+                manager.return_to_normal_boot()
+            except Exception as exc:
+                _msgbox(
+                    "Ripristino boot fallito",
+                    f"Impossibile impostare il prossimo boot normale:\n\n{exc}",
+                    icon=0x10,
+                )
+                return True
+
+            _msgbox(
+                "Ripristino VT-x Lab",
+                "Il prossimo avvio e' stato impostato sul Windows normale.\n\n"
+                "Dopo il login la vecchia voce Lab verra' rimossa "
+                "automaticamente e potrai creare una nuova sessione aggiornata.",
+                icon=0x40,
+            )
+            manager.reboot_now()
+            return False
 
     try:
         hypervisor_present = manager.is_hypervisor_present()
