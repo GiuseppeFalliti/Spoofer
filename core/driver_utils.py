@@ -5,11 +5,46 @@ import win32file
 import win32con
 import pywintypes
 import time
+import hashlib
+import shutil
 
 # ---------------------------------------------------------------------------
 # Costanti
 # ---------------------------------------------------------------------------
 DRIVER_FILENAME = "hwid_virtualization_driver.sys"
+STABLE_DRIVER_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", os.path.expanduser("~")),
+    "HWIDSpoofer",
+    "driver",
+)
+
+
+def _deploy_embedded_driver(source_path: str) -> str:
+    """Copia il driver PyInstaller in un percorso stabile e versionato.
+
+    Un eseguibile --onefile estrae le risorse in una directory _MEI temporanea.
+    Un kernel driver non deve dipendere dalla vita di quella directory.
+    """
+    if not hasattr(sys, "_MEIPASS"):
+        return source_path
+
+    hasher = hashlib.sha256()
+    with open(source_path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+
+    digest = hasher.hexdigest()[:16]
+    os.makedirs(STABLE_DRIVER_DIR, exist_ok=True)
+
+    target_path = os.path.join(
+        STABLE_DRIVER_DIR,
+        f"hwid_virtualization_driver_{digest}.sys",
+    )
+
+    if not os.path.isfile(target_path):
+        shutil.copy2(source_path, target_path)
+
+    return target_path
 
 
 def get_resource_path(relative_path: str) -> str:
@@ -40,10 +75,11 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
     if not os.path.isfile(driver_path):
         raise FileNotFoundError(
             f"File driver non trovato: '{driver_path}'\n\n"
-            f"Assicurati che il file '{os.path.basename(driver_path)}' sia posizionato:\n"
-            f"1. Accanto all'eseguibile HWIDSpoofer.exe, oppure\n"
-            f"2. Nella cartella del progetto prima di eseguire build.py."
+            f"Assicurati che il file '{os.path.basename(driver_path)}' sia incluso "
+            "nella build o presente nel progetto."
         )
+
+    driver_path = _deploy_embedded_driver(driver_path)
 
     scm_handle = None
     svc_handle = None
