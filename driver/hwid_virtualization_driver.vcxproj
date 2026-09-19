@@ -49,10 +49,7 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
-  <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props"
-            Condition="Exists('$(VCTargetsPath)\BuildCustomizations\masm.props')" />
-  </ImportGroup>
+  <ImportGroup Label="ExtensionSettings" />
 
   <ImportGroup Label="PropertySheets"
                Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -102,7 +99,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <MASM Include="hv\vmexit.asm" />
+    <MASM Include="hv\vmexit_stub.asm" />
   </ItemGroup>
 
   <ItemGroup>
@@ -110,9 +107,6 @@
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets"
-            Condition="Exists('$(VCTargetsPath)\BuildCustomizations\masm.targets')" />
-  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets" />
 
 </Project>
