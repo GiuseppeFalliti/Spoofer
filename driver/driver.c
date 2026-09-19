@@ -13,6 +13,15 @@ static volatile LONG g_SmbiosHookEnabled = 0;
 static UCHAR g_SmbiosBlob[SMBIOS_BLOB_CAPACITY];
 static ULONG g_SmbiosBlobSize = 0;
 
+typedef NTSTATUS (NTAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
+    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    _Inout_updates_bytes_(SystemInformationLength) PVOID SystemInformation,
+    _In_ ULONG SystemInformationLength,
+    _Out_opt_ PULONG ReturnLength
+    );
+
+static PFN_NT_QUERY_SYSTEM_INFORMATION g_OriginalNtQuerySystemInformation = NULL;
+
 static
 VOID
 CompleteIrp(
@@ -173,6 +182,61 @@ BuildFakeSmbiosBlob(
 }
 
 NTSTATUS
+Hooked_NtQuerySystemInformation(
+    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+    _In_ ULONG SystemInformationLength,
+    _Out_opt_ PULONG ReturnLength
+    )
+{
+    NTSTATUS status;
+
+    //
+    // This is not installed as a global hook.  The original routine pointer
+    // is kept only so this proxy preserves NtQuerySystemInformation semantics
+    // when the SMBIOS test path is disabled.
+    //
+    if (InterlockedCompareExchange(&g_SmbiosHookEnabled, 0, 0) == 0) {
+        if (g_OriginalNtQuerySystemInformation == NULL) {
+            return STATUS_NOT_SUPPORTED;
+        }
+
+        return g_OriginalNtQuerySystemInformation(
+            SystemInformationClass,
+            SystemInformation,
+            SystemInformationLength,
+            ReturnLength
+            );
+    }
+
+    status = BuildFakeSmbiosBlob();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    if (ReturnLength != NULL) {
+        *ReturnLength = g_SmbiosBlobSize;
+    }
+
+    if (SystemInformation == NULL ||
+        SystemInformationLength < g_SmbiosBlobSize) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    //
+    // Hooked_NtQuerySystemInformation is invoked only by our METHOD_BUFFERED
+    // IOCTL path, so SystemInformation is a kernel SystemBuffer here.
+    //
+    RtlCopyMemory(
+        SystemInformation,
+        g_SmbiosBlob,
+        g_SmbiosBlobSize
+        );
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
 HwidCreateClose(
     _In_ PDEVICE_OBJECT DeviceObject,
     _Inout_ PIRP Irp
@@ -192,6 +256,7 @@ HwidDeviceControl(
 {
     PIO_STACK_LOCATION stack;
     ULONG ioctlCode;
+    ULONG_PTR information = 0;
     NTSTATUS status = STATUS_SUCCESS;
 
     UNREFERENCED_PARAMETER(DeviceObject);
@@ -255,6 +320,58 @@ HwidDeviceControl(
             );
         break;
 
+    case IOCTL_QUERY_FAKE_SMBIOS:
+    {
+        ULONG returnLength = 0;
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+        //
+        // Keep this IOCTL explicitly tied to the existing enable/disable
+        // state.  This also guarantees that the proxy never falls through to
+        // the real system-information routine for a test request.
+        //
+        if (InterlockedCompareExchange(&g_SmbiosHookEnabled, 0, 0) == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake SMBIOS query rejected: hook disabled\n"
+                );
+            break;
+        }
+
+        status = Hooked_NtQuerySystemInformation(
+            (SYSTEM_INFORMATION_CLASS)0,
+            Irp->AssociatedIrp.SystemBuffer,
+            outputLength,
+            &returnLength
+            );
+
+        if (NT_SUCCESS(status)) {
+            information = returnLength;
+
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_INFO_LEVEL,
+                "[HwidSpoofer] Returned fake SMBIOS blob: %lu bytes\n",
+                returnLength
+                );
+        }
+        else if (status == STATUS_BUFFER_TOO_SMALL) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake SMBIOS output buffer too small: "
+                "provided=%lu required=%lu\n",
+                outputLength,
+                returnLength
+                );
+        }
+
+        break;
+    }
+
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
         DbgPrintEx(
@@ -266,7 +383,7 @@ HwidDeviceControl(
         break;
     }
 
-    CompleteIrp(Irp, status, 0);
+    CompleteIrp(Irp, status, information);
     return status;
 }
 
@@ -280,6 +397,7 @@ HwidUnload(
     InterlockedExchange(&g_FirmwareHookEnabled, 0);
     InterlockedExchange(&g_HalHookEnabled, 0);
     InterlockedExchange(&g_SmbiosHookEnabled, 0);
+    g_OriginalNtQuerySystemInformation = NULL;
 
     RtlInitUnicodeString(&dosDeviceName, HWID_DOS_DEVICE_NAME);
     IoDeleteSymbolicLink(&dosDeviceName);
@@ -305,11 +423,30 @@ DriverEntry(
     PDEVICE_OBJECT deviceObject = NULL;
     UNICODE_STRING deviceName;
     UNICODE_STRING dosDeviceName;
+    UNICODE_STRING systemRoutineName;
 
     UNREFERENCED_PARAMETER(RegistryPath);
 
     RtlInitUnicodeString(&deviceName, HWID_DEVICE_NAME);
     RtlInitUnicodeString(&dosDeviceName, HWID_DOS_DEVICE_NAME);
+
+    //
+    // Resolve a supported kernel entry point without modifying the SSDT.
+    // It is used only by the proxy's pass-through branch.
+    //
+    RtlInitUnicodeString(&systemRoutineName, L"ZwQuerySystemInformation");
+    g_OriginalNtQuerySystemInformation =
+        (PFN_NT_QUERY_SYSTEM_INFORMATION)
+        MmGetSystemRoutineAddress(&systemRoutineName);
+
+    if (g_OriginalNtQuerySystemInformation == NULL) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_WARNING_LEVEL,
+            "[HwidSpoofer] ZwQuerySystemInformation was not resolved; "
+            "proxy pass-through is unavailable\n"
+            );
+    }
 
     status = BuildFakeSmbiosBlob();
     if (!NT_SUCCESS(status)) {
