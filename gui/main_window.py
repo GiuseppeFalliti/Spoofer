@@ -330,17 +330,18 @@ class MainWindow(QMainWindow):
             return
 
         ioctl_map = {
-            self.cb_firmware_hook: 0x80002000,
-            self.cb_hal_hook: 0x80002008,
-            self.cb_smbios_hook: 0x80002010,
+            self.cb_firmware_hook: (0x80002000, 0x80002004),
+            self.cb_hal_hook: (0x80002008, 0x8000200C),
+            self.cb_smbios_hook: (0x80002010, 0x80002014),
         }
 
-        ioctl_code = ioctl_map.get(sender)
-        if ioctl_code is None:
+        ioctl_pair = ioctl_map.get(sender)
+        if ioctl_pair is None:
             return
 
-        # Qt.Checked è 2, inviamo 1 per abilitare e 0 per disabilitare
-        payload = 1 if state == Qt.Checked else 0
+        enabled = state == Qt.Checked
+        ioctl_code = ioctl_pair[0] if enabled else ioctl_pair[1]
+        payload = 1 if enabled else 0
         
         if not self._send_ioctl_safe(ioctl_code, payload):
             # Se fallisce, ripristina lo stato della checkbox senza triggerare di nuovo il segnale
