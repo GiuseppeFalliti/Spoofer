@@ -1,0 +1,59 @@
+#pragma once
+
+#include <ntddk.h>
+
+//
+// Device names
+//
+#define HWID_DEVICE_NAME      L"\\Device\\HwidSpoofer"
+#define HWID_DOS_DEVICE_NAME  L"\\DosDevices\\HwidSpoofer"
+
+//
+// IOCTL values kept identical to the Python simulation.
+//
+#define IOCTL_SET_FIRMWARE_HOOK    ((ULONG)0x80002000)
+#define IOCTL_CLEAR_FIRMWARE_HOOK  ((ULONG)0x80002004)
+#define IOCTL_SET_HAL_HOOK         ((ULONG)0x80002008)
+#define IOCTL_CLEAR_HAL_HOOK       ((ULONG)0x8000200C)
+#define IOCTL_SET_SMBIOS_HOOK      ((ULONG)0x80002010)
+#define IOCTL_CLEAR_SMBIOS_HOOK    ((ULONG)0x80002014)
+
+#define SMBIOS_BLOB_CAPACITY 512
+
+#pragma pack(push, 1)
+
+typedef struct _SMBIOS_TYPE1_HEADER {
+    UCHAR Type;
+    UCHAR Length;
+    USHORT Handle;
+    UCHAR Manufacturer;
+    UCHAR ProductName;
+    UCHAR Version;
+    UCHAR SerialNumber;
+    UCHAR Uuid[16];
+    UCHAR WakeUpType;
+    UCHAR SkuNumber;
+    UCHAR Family;
+} SMBIOS_TYPE1_HEADER, *PSMBIOS_TYPE1_HEADER;
+
+#pragma pack(pop)
+
+C_ASSERT(sizeof(SMBIOS_TYPE1_HEADER) == 27);
+
+DRIVER_INITIALIZE DriverEntry;
+
+_Dispatch_type_(IRP_MJ_CREATE)
+DRIVER_DISPATCH HwidCreateClose;
+
+_Dispatch_type_(IRP_MJ_CLOSE)
+DRIVER_DISPATCH HwidCreateClose;
+
+_Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
+DRIVER_DISPATCH HwidDeviceControl;
+
+DRIVER_UNLOAD HwidUnload;
+
+NTSTATUS
+BuildFakeSmbiosBlob(
+    VOID
+    );
