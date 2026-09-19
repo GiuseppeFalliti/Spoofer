@@ -8,9 +8,9 @@ CatalogFile=hwid_virtualization_driver.cat
 PnpLockdown=1
 
 [Manufacturer]
-%ProviderName%=Standard,NTamd64
+%ProviderName%=Standard,NTamd64.10.0...16299
 
-[Standard.NTamd64]
+[Standard.NTamd64.10.0...16299]
 %DeviceDesc%=DriverInstall,Root\HWIDVIRTUALIZATIONRESEARCH
 
 [DriverInstall.NT]
