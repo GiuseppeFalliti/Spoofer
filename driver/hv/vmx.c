@@ -144,7 +144,7 @@ HvAllocateVmxPage(
     PVOID page;
 
     lowest.QuadPart = 0;
-    highest.QuadPart = ~0ull;
+    highest.QuadPart = MAXLONGLONG;
     boundary.QuadPart = 0;
 
     page = MmAllocateContiguousMemorySpecifyCache(
@@ -335,9 +335,27 @@ HvAllocateVmcs(
         return STATUS_DEVICE_NOT_READY;
     }
 
-    revisionId =
-        (ULONG)(__readmsr(HV_IA32_VMX_BASIC) &
-            0x7FFFFFFFull);
+    {
+        ULONG64 vmxBasic = __readmsr(HV_IA32_VMX_BASIC);
+        ULONG regionSize = (ULONG)((vmxBasic >> 32) & 0x1FFFu);
+        ULONG memoryType = (ULONG)((vmxBasic >> 50) & 0x0Fu);
+
+        if (regionSize == 0 ||
+            regionSize > PAGE_SIZE ||
+            memoryType != 6) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_ERROR_LEVEL,
+                "[HwidHv] Unsupported VMX region requirements: size=%lu type=%lu.\n",
+                regionSize,
+                memoryType
+                );
+            return STATUS_NOT_SUPPORTED;
+        }
+
+        revisionId =
+            (ULONG)(vmxBasic & 0x7FFFFFFFull);
+    }
 
     for (index = 0;
          index < g_HvState.ProcessorCount;
@@ -537,6 +555,23 @@ HvStopVmx(
     }
 
     InterlockedExchange(&g_HvState.Running, 0);
+
+    if (g_HvState.CpuContexts != NULL) {
+        ULONG index;
+
+        for (index = 0;
+             index < g_HvState.ProcessorCount;
+             ++index) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_INFO_LEVEL,
+                "[HwidHv] CPU %lu stats: vmexit=%lld ept_violation=%lld\n",
+                index,
+                g_HvState.CpuContexts[index].VmExitCount,
+                g_HvState.CpuContexts[index].EptViolationCount
+                );
+        }
+    }
 
     DbgPrintEx(
         DPFLTR_IHVDRIVER_ID,
