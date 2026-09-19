@@ -17,6 +17,8 @@
 #define IOCTL_CLEAR_HAL_HOOK       ((ULONG)0x8000200C)
 #define IOCTL_SET_SMBIOS_HOOK      ((ULONG)0x80002010)
 #define IOCTL_CLEAR_SMBIOS_HOOK    ((ULONG)0x80002014)
+#define IOCTL_CHECK_VTX_SUPPORT    ((ULONG)0x80002018)
+#define IOCTL_CHECK_HYPERVISOR     ((ULONG)0x8000201C)
 
 // Safe, METHOD_BUFFERED test path for retrieving the generated SMBIOS blob.
 #define IOCTL_QUERY_FAKE_SMBIOS \
@@ -33,6 +35,25 @@
 #define SMBIOS_BLOB_CAPACITY 512
 #define FIRMWARE_BLOB_CAPACITY 128
 #define HAL_BLOB_CAPACITY 64
+
+//
+// Minimal VT-x/EPT capability snapshot returned to user mode.
+//
+// VmxLocked is TRUE when the current IA32_FEATURE_CONTROL configuration
+// would make VMXON invalid outside SMX (lock bit not established or VMX
+// outside SMX disabled). HypervisorPresent is reported separately because
+// an existing hypervisor may own/virtualize the hardware virtualization
+// extensions even when firmware permits VMX.
+//
+typedef struct _VTX_CAPABILITIES {
+    BOOLEAN VtxSupported;
+    BOOLEAN EptSupported;
+    BOOLEAN VmxLocked;
+    BOOLEAN HypervisorPresent;
+    ULONG ProcessorCount;
+} VTX_CAPABILITIES, *PVTX_CAPABILITIES;
+
+C_ASSERT(sizeof(VTX_CAPABILITIES) == 8);
 
 #pragma pack(push, 1)
 
@@ -87,5 +108,15 @@ BuildFakeFirmwareBlob(
 
 NTSTATUS
 BuildFakeHalBlob(
+    VOID
+    );
+
+NTSTATUS
+HvCheckVtxSupport(
+    _Out_ PVTX_CAPABILITIES Capabilities
+    );
+
+BOOLEAN
+HvCheckHypervisorPresence(
     VOID
     );
