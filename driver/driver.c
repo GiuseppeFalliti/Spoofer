@@ -138,8 +138,10 @@ HvCheckHypervisorPresence(
     DbgPrintEx(
         DPFLTR_IHVDRIVER_ID,
         DPFLTR_INFO_LEVEL,
-        "[HwidSpoofer][HV] Hypervisor present: vendor='%s', max leaf=0x%08X\n",
+        "[HwidSpoofer][HV] Hypervisor present: vendor='%s', "
+        "Microsoft Hyper-V=%u, max leaf=0x%08X\n",
         vendorId,
+        (ULONG)(RtlCompareMemory(vendorId, "Microsoft Hv", 12) == 12),
         (ULONG)hvInfo[0]
         );
 
@@ -794,9 +796,9 @@ HwidDeviceControl(
                 DPFLTR_IHVDRIVER_ID,
                 DPFLTR_WARNING_LEVEL,
                 "[HwidSpoofer][HV] VT-x capability output buffer too small: "
-                "provided=%lu required=%Iu\n",
+                "provided=%lu required=%lu\n",
                 outputLength,
-                sizeof(VTX_CAPABILITIES)
+                (ULONG)sizeof(VTX_CAPABILITIES)
                 );
 
             break;
@@ -840,9 +842,9 @@ HwidDeviceControl(
                 DPFLTR_IHVDRIVER_ID,
                 DPFLTR_WARNING_LEVEL,
                 "[HwidSpoofer][HV] Hypervisor output buffer too small: "
-                "provided=%lu required=%Iu\n",
+                "provided=%lu required=%lu\n",
                 outputLength,
-                sizeof(BOOLEAN)
+                (ULONG)sizeof(BOOLEAN)
                 );
 
             break;
