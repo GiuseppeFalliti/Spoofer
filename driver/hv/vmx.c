@@ -4,6 +4,67 @@ HV_STATE g_HvState = { 0 };
 
 static
 BOOLEAN
+HvCpuIsIntel(
+    VOID
+    )
+{
+    int cpuInfo[4] = { 0 };
+    CHAR vendor[13] = { 0 };
+
+    __cpuid(cpuInfo, 0);
+
+    RtlCopyMemory(&vendor[0], &cpuInfo[1], sizeof(ULONG));
+    RtlCopyMemory(&vendor[4], &cpuInfo[3], sizeof(ULONG));
+    RtlCopyMemory(&vendor[8], &cpuInfo[2], sizeof(ULONG));
+
+    return RtlCompareMemory(
+        vendor,
+        "GenuineIntel",
+        12
+        ) == 12;
+}
+
+static
+BOOLEAN
+HvControlRegistersAreValid(
+    VOID
+    )
+{
+    ULONG64 cr0;
+    ULONG64 cr4;
+    ULONG64 cr0Fixed0;
+    ULONG64 cr0Fixed1;
+    ULONG64 cr4Fixed0;
+    ULONG64 cr4Fixed1;
+
+    __try {
+        cr0 = __readcr0();
+        cr4 = __readcr4() | (1ull << 13);
+
+        cr0Fixed0 = __readmsr(HV_IA32_VMX_CR0_FIXED0);
+        cr0Fixed1 = __readmsr(HV_IA32_VMX_CR0_FIXED1);
+        cr4Fixed0 = __readmsr(HV_IA32_VMX_CR4_FIXED0);
+        cr4Fixed1 = __readmsr(HV_IA32_VMX_CR4_FIXED1);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return FALSE;
+    }
+
+    if ((cr0 & cr0Fixed0) != cr0Fixed0 ||
+        (cr0 & ~cr0Fixed1) != 0) {
+        return FALSE;
+    }
+
+    if ((cr4 & cr4Fixed0) != cr4Fixed0 ||
+        (cr4 & ~cr4Fixed1) != 0) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
 HvCpuReportsVmx(
     VOID
     )
@@ -154,6 +215,15 @@ HvInitialize(
     RtlZeroMemory(&g_HvState, sizeof(g_HvState));
     KeInitializeSpinLock(&g_HvState.Ept.Lock);
 
+    if (!HvCpuIsIntel()) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_ERROR_LEVEL,
+            "[HwidHv] This lab implementation supports Intel VT-x only.\n"
+            );
+        return STATUS_NOT_SUPPORTED;
+    }
+
     g_HvState.HypervisorPresent = HvCpuReportsHypervisor();
     g_HvState.VmxSupported = HvCpuReportsVmx();
 
@@ -176,6 +246,15 @@ HvInitialize(
             DPFLTR_ERROR_LEVEL,
             "[HwidHv] IA32_FEATURE_CONTROL does not permit "
             "VMX outside SMX.\n"
+            );
+        return STATUS_HV_FEATURE_UNAVAILABLE;
+    }
+
+    if (!HvControlRegistersAreValid()) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_ERROR_LEVEL,
+            "[HwidHv] Current CR0/CR4 values do not satisfy VMX fixed-bit requirements.\n"
             );
         return STATUS_HV_FEATURE_UNAVAILABLE;
     }
