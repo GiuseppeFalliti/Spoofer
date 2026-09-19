@@ -19,6 +19,12 @@
 #define IOCTL_CLEAR_SMBIOS_HOOK    ((ULONG)0x80002014)
 
 //
+// Read-only VT-x/EPT capability probes used by test_vtx.py.
+//
+#define IOCTL_CHECK_VTX_SUPPORT    ((ULONG)0x80002018)
+#define IOCTL_CHECK_HYPERVISOR     ((ULONG)0x8000201C)
+
+//
 // VT-x/EPT research-lab controls.
 //
 #define IOCTL_START_HYPERVISOR     ((ULONG)0x80002020)
@@ -42,6 +48,16 @@
 #define HAL_BLOB_CAPACITY 64
 
 #pragma pack(push, 1)
+
+typedef struct _HV_CAPABILITY_QUERY {
+    UCHAR VtxSupported;
+    UCHAR EptSupported;
+    UCHAR VmxBlocked;
+    UCHAR HypervisorPresent;
+    ULONG ProcessorCount;
+} HV_CAPABILITY_QUERY, *PHV_CAPABILITY_QUERY;
+
+C_ASSERT(sizeof(HV_CAPABILITY_QUERY) == 8);
 
 typedef struct _SMBIOS_TYPE1_HEADER {
     UCHAR Type;
