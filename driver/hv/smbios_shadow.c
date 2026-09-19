@@ -69,9 +69,10 @@ HvCopyFixedString(
 
     RtlZeroMemory(Destination, DestinationSize);
 
-    sourceLength = strlen(Source);
-    if (sourceLength >= DestinationSize) {
-        sourceLength = DestinationSize - 1;
+    sourceLength = 0;
+    while (sourceLength + 1 < DestinationSize &&
+           Source[sourceLength] != '\0') {
+        ++sourceLength;
     }
 
     RtlCopyMemory(
