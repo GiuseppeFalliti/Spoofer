@@ -475,6 +475,11 @@
    'C:\\Users\\Giuseppe '
    'Falliti\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\py_compile.py',
    'PYMODULE'),
+  ('pywin32_system32', '-', 'PYMODULE'),
+  ('pywintypes',
+   'C:\\Users\\Giuseppe '
+   'Falliti\\Desktop\\Spoofer\\.venv\\Lib\\site-packages\\win32\\lib\\pywintypes.py',
+   'PYMODULE'),
   ('quopri',
    'C:\\Users\\Giuseppe '
    'Falliti\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\quopri.py',
@@ -578,6 +583,10 @@
   ('uuid',
    'C:\\Users\\Giuseppe '
    'Falliti\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\uuid.py',
+   'PYMODULE'),
+  ('win32con',
+   'C:\\Users\\Giuseppe '
+   'Falliti\\Desktop\\Spoofer\\.venv\\Lib\\site-packages\\win32\\lib\\win32con.py',
    'PYMODULE'),
   ('zipfile',
    'C:\\Users\\Giuseppe '
