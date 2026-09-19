@@ -639,15 +639,23 @@ HvDisableLabSmbiosEptHook(
     ULONG pdptIndex;
     ULONG64 oneGbBase;
     BOOLEAN wasActive;
+    BOOLEAN wasTrapArmed;
+    BOOLEAN wasShadowInstalled;
     NTSTATUS status;
 
-    wasActive =
+    wasTrapArmed =
         InterlockedExchange(
             &g_HvState.Ept.LabTrapArmed,
-            0) != 0 ||
+            0) != 0;
+
+    wasShadowInstalled =
         InterlockedExchange(
             &g_HvState.Ept.LabShadowInstalled,
             0) != 0;
+
+    wasActive =
+        wasTrapArmed ||
+        wasShadowInstalled;
 
     if (!wasActive ||
         g_HvState.Ept.Pdpt == NULL ||
