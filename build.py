@@ -41,12 +41,14 @@ def build() -> None:
         print(f"[OK] Entry point trovato  : {MAIN_PY}")
 
     if not os.path.isfile(DRIVER_SYS):
-        print(f"[AVVISO] Driver non trovato: {DRIVER_SYS}")
-        print("         Il file .sys NON verrà incluso nell'eseguibile.")
-        include_driver = False
+        print(f"[ERRORE] Driver kernel richiesto non trovato: {DRIVER_SYS}")
+        print("         La build viene interrotta per evitare di generare un .exe")
+        print("         che fallirebbe a runtime tentando di caricare il driver.")
+        print("         Nota: hwid_virtualization_driver.py è solo una simulazione")
+        print("         Python e NON sostituisce un driver Windows .sys.")
+        sys.exit(2)
     else:
         print(f"[OK] Driver trovato        : {DRIVER_SYS}")
-        include_driver = True
 
     if os.path.isfile(ICON_ICO):
         print(f"[OK] Icona trovata         : {ICON_ICO}")
@@ -89,10 +91,9 @@ def build() -> None:
         "--hidden-import=win32api",
     ]
 
-    # Driver kernel (.sys) — incluso nella radice della cartella temporanea
-    if include_driver:
-        # Sintassi Windows per --add-data: "sorgente;destinazione"
-        cmd.append(f"--add-data={DRIVER_SYS};.")
+    # Driver kernel (.sys) — incluso nella radice della cartella temporanea.
+    # La presenza è già stata verificata sopra: una build senza driver non è valida.
+    cmd.append(f"--add-data={DRIVER_SYS};.")
 
     # config.json — copiato accanto all'exe (non nella _MEI temporanea)
     config_json = os.path.join(BASE_DIR, "config.json")
