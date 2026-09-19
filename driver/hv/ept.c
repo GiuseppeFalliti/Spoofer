@@ -584,6 +584,51 @@ HvRedirectToSmbiosShadow(
     return STATUS_SUCCESS;
 }
 
+BOOLEAN
+HvRollbackLabSmbiosEptCurrentProcessor(
+    VOID
+    )
+{
+    PULONG64 pt;
+    ULONG64 targetPhysical;
+    ULONG64 identityEntry;
+
+    targetPhysical =
+        g_HvState.Ept.LabSmbiosPhysical.QuadPart;
+
+    if (g_HvState.Ept.SplitPt == NULL ||
+        targetPhysical == 0) {
+        return FALSE;
+    }
+
+    pt = (PULONG64)g_HvState.Ept.SplitPt;
+
+    identityEntry =
+        (targetPhysical & HV_EPT_ADDR_MASK) |
+        HV_EPT_READ |
+        HV_EPT_WRITE |
+        HV_EPT_EXECUTE |
+        HV_EPT_MEMTYPE_WB;
+
+    InterlockedExchange64(
+        (volatile LONG64*)&pt[g_HvState.Ept.SplitPtIndex],
+        (LONG64)identityEntry
+        );
+
+    KeMemoryBarrier();
+
+    InterlockedExchange(
+        &g_HvState.Ept.LabTrapArmed,
+        0
+        );
+    InterlockedExchange(
+        &g_HvState.Ept.LabShadowInstalled,
+        0
+        );
+
+    return HvInvalidateEptCurrentProcessor();
+}
+
 VOID
 HvDisableLabSmbiosEptHook(
     VOID
