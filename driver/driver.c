@@ -13,12 +13,33 @@ static volatile LONG g_SmbiosHookEnabled = 0;
 static UCHAR g_SmbiosBlob[SMBIOS_BLOB_CAPACITY];
 static ULONG g_SmbiosBlobSize = 0;
 
-<<<<<<< HEAD
-=======
 static UCHAR g_FirmwareBlob[FIRMWARE_BLOB_CAPACITY];
 static ULONG g_FirmwareBlobSize = 0;
 
->>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
+static UCHAR g_HalBlob[HAL_BLOB_CAPACITY];
+static ULONG g_HalBlobSize = 0;
+
+#pragma pack(push, 1)
+
+typedef struct _FAKE_PCI_DATA {
+    USHORT VendorID;
+    USHORT DeviceID;
+    USHORT Command;
+    USHORT Status;
+    UCHAR RevisionID;
+    UCHAR ProgIf;
+    UCHAR SubClass;
+    UCHAR BaseClass;
+    UCHAR CacheLineSize;
+    UCHAR LatencyTimer;
+    UCHAR HeaderType;
+    UCHAR BIST;
+} FAKE_PCI_DATA, *PFAKE_PCI_DATA;
+
+#pragma pack(pop)
+
+C_ASSERT(sizeof(FAKE_PCI_DATA) == 16);
+
 typedef NTSTATUS (NTAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
     _In_ ULONG SystemInformationClass,
     _Inout_updates_bytes_(SystemInformationLength) PVOID SystemInformation,
@@ -188,8 +209,6 @@ BuildFakeSmbiosBlob(
 }
 
 NTSTATUS
-<<<<<<< HEAD
-=======
 BuildFakeFirmwareBlob(
     VOID
     )
@@ -243,7 +262,63 @@ BuildFakeFirmwareBlob(
 }
 
 NTSTATUS
->>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
+BuildFakeHalBlob(
+    VOID
+    )
+{
+    FAKE_PCI_DATA pciData;
+    ULONG requiredSize = (ULONG)sizeof(pciData);
+
+    if (requiredSize > sizeof(g_HalBlob)) {
+        g_HalBlobSize = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    RtlZeroMemory(&pciData, sizeof(pciData));
+    RtlZeroMemory(g_HalBlob, sizeof(g_HalBlob));
+
+    //
+    // Compact PCI configuration-header test payload.  The first fields and
+    // RevisionID use the same offsets as the standard PCI common header, so
+    // user mode can validate the HAL spoofing logic without touching real
+    // hardware or installing a kernel hook.
+    //
+    pciData.VendorID = 0x1234;
+    pciData.DeviceID = 0x5678;
+    pciData.Command = 0x0007;
+    pciData.Status = 0x0010;
+    pciData.RevisionID = 0x01;
+    pciData.ProgIf = 0x00;
+    pciData.SubClass = 0x00;
+    pciData.BaseClass = 0x02;
+    pciData.CacheLineSize = 0x10;
+    pciData.LatencyTimer = 0x00;
+    pciData.HeaderType = 0x00;
+    pciData.BIST = 0x00;
+
+    RtlCopyMemory(
+        g_HalBlob,
+        &pciData,
+        sizeof(pciData)
+        );
+
+    g_HalBlobSize = requiredSize;
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer] Fake HAL/PCI blob prepared: %lu bytes "
+        "(VID=%04X DID=%04X REV=%02X)\n",
+        g_HalBlobSize,
+        pciData.VendorID,
+        pciData.DeviceID,
+        pciData.RevisionID
+        );
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
 Hooked_NtQuerySystemInformation(
     _In_ ULONG SystemInformationClass,
     _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
@@ -382,8 +457,58 @@ HwidDeviceControl(
             );
         break;
 
-<<<<<<< HEAD
-=======
+    case IOCTL_QUERY_FAKE_HAL:
+    {
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+        if (InterlockedCompareExchange(&g_HalHookEnabled, 0, 0) == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake HAL query rejected: hook disabled\n"
+                );
+            break;
+        }
+
+        status = BuildFakeHalBlob();
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < g_HalBlobSize) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake HAL output buffer too small: "
+                "provided=%lu required=%lu\n",
+                outputLength,
+                g_HalBlobSize
+                );
+            break;
+        }
+
+        RtlCopyMemory(
+            Irp->AssociatedIrp.SystemBuffer,
+            g_HalBlob,
+            g_HalBlobSize
+            );
+
+        information = g_HalBlobSize;
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer] Returned fake HAL/PCI blob: %lu bytes\n",
+            g_HalBlobSize
+            );
+
+        break;
+    }
+
     case IOCTL_QUERY_FAKE_FIRMWARE:
     {
         ULONG outputLength =
@@ -436,7 +561,6 @@ HwidDeviceControl(
         break;
     }
 
->>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
     case IOCTL_QUERY_FAKE_SMBIOS:
     {
         ULONG returnLength = 0;
