@@ -20,7 +20,7 @@ def get_resource_path(relative_path: str) -> str:
         base_path = sys._MEIPASS
     else:
         # Altrimenti, usa la directory del progetto (sviluppo)
-        base_path = os.path.dirname(os.path.abspath(__file__))
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     return os.path.join(base_path, relative_path)
 
