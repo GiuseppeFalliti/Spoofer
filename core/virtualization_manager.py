@@ -343,6 +343,19 @@ class VirtualizationManager:
                 ]
             )
 
+            # Windows espone VSM come opzione BCD distinta dall'hypervisor.
+            # La disabilitiamo esclusivamente sulla copia one-shot del boot,
+            # mai sulla voce Windows normale.
+            self._run(
+                [
+                    "bcdedit.exe",
+                    "/set",
+                    created_guid,
+                    "vsmlaunchtype",
+                    "off",
+                ]
+            )
+
             # /bootsequence non cambia il boot predefinito: vale soltanto per
             # il riavvio successivo.
             self._run(
@@ -416,16 +429,36 @@ class VirtualizationManager:
         )
 
     def finish_resume(self) -> VtxCapabilities:
-        """Completa il resume: verifica il boot Lab, carica il driver e misura VMX/EPT."""
+        """Completa il resume: verifica boot Lab, driver e capacita' VMX/EPT."""
         state = self.load_state()
         self._delete_task(TASK_RESUME_NAME)
+
+        expected_guid = state.get("boot_guid") if state else None
+        current_guid = self.current_boot_guid()
+
+        if (
+            expected_guid
+            and current_guid
+            and str(expected_guid).lower() != str(current_guid).lower()
+        ):
+            if state:
+                self._schedule_cleanup(state)
+            raise RuntimeError(
+                "Windows non ha avviato la voce VT-x Lab prevista. "
+                f"Attesa={expected_guid}, corrente={current_guid}. "
+                "Il boot normale non e' stato modificato."
+            )
 
         if self.is_hypervisor_present():
             if state:
                 self._schedule_cleanup(state)
             raise RuntimeError(
-                "Il riavvio VT-x Lab non ha disattivato il Windows hypervisor. "
-                "Nessuna configurazione di sicurezza e' stata forzata."
+                "La voce VT-x Lab e' stata avviata, ma il Windows hypervisor "
+                "risulta ancora presente anche con hypervisorlaunchtype=off e "
+                "vsmlaunchtype=off. Il sistema potrebbe avere VBS/Credential "
+                "Guard con protezione firmware/UEFI oppure un'altra policy "
+                "di piattaforma. Nessuna protezione firmware viene forzata "
+                "o rimossa automaticamente."
             )
 
         from core.driver_utils import load_driver
