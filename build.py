@@ -5,11 +5,67 @@ import os
 # ---------------------------------------------------------------------------
 # Percorsi
 # ---------------------------------------------------------------------------
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-MAIN_PY    = os.path.join(BASE_DIR, "main.py")
-DRIVER_SYS = os.path.join(BASE_DIR, "hwid_virtualization_driver.sys")
-ICON_ICO   = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
-EXE_NAME   = "HWIDSpoofer"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MAIN_PY = os.path.join(BASE_DIR, "main.py")
+ICON_ICO = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
+EXE_NAME = "HWIDSpoofer"
+
+DRIVER_CANDIDATES = [
+    os.environ.get("HWID_DRIVER_SYS"),
+    os.path.join(
+        BASE_DIR,
+        "driver",
+        "x64",
+        "ReleaseTest",
+        "hwid_virtualization_driver.sys",
+    ),
+]
+
+
+def find_driver_sys():
+    """Preferisce la build WDK piu' recente del laboratorio rispetto al .sys root."""
+    for path in DRIVER_CANDIDATES:
+        if path and os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+def choose_dist_dir() -> str:
+    """Usa dist/ normalmente; se l'EXE esistente e' bloccato, usa una cartella alternativa."""
+    preferred = os.path.join(BASE_DIR, "dist")
+    preferred_exe = os.path.join(preferred, f"{EXE_NAME}.exe")
+
+    if not os.path.exists(preferred_exe):
+        return preferred
+
+    try:
+        os.remove(preferred_exe)
+        return preferred
+    except PermissionError:
+        print(
+            f"[AVVISO] {preferred_exe} e' in uso e non puo' essere sostituito."
+        )
+    except OSError as exc:
+        print(
+            f"[AVVISO] Impossibile rimuovere il vecchio EXE ({exc}). "
+            "Uso una cartella di output alternativa."
+        )
+
+    for index in range(1, 100):
+        suffix = "dist_next" if index == 1 else f"dist_next_{index}"
+        candidate = os.path.join(BASE_DIR, suffix)
+        candidate_exe = os.path.join(candidate, f"{EXE_NAME}.exe")
+
+        if not os.path.exists(candidate_exe):
+            return candidate
+
+        try:
+            os.remove(candidate_exe)
+            return candidate
+        except OSError:
+            continue
+
+    raise RuntimeError("Impossibile trovare una cartella di output libera.")
 
 
 def check_pyinstaller() -> None:
@@ -40,13 +96,21 @@ def build() -> None:
     else:
         print(f"[OK] Entry point trovato  : {MAIN_PY}")
 
-    if not os.path.isfile(DRIVER_SYS):
-        print(f"[AVVISO] Driver non trovato: {DRIVER_SYS}")
-        print("         Il file .sys NON verrà incluso nell'eseguibile.")
-        include_driver = False
-    else:
-        print(f"[OK] Driver trovato        : {DRIVER_SYS}")
-        include_driver = True
+    driver_sys = find_driver_sys()
+    if driver_sys is None:
+        print("[ERRORE] Driver lab non trovato.")
+        print(
+            "         Compila prima driver\\x64\\ReleaseTest\\"
+            "hwid_virtualization_driver.sys"
+        )
+        print(
+            "         oppure imposta HWID_DRIVER_SYS con il percorso "
+            "assoluto del .sys da includere."
+        )
+        sys.exit(1)
+
+    print(f"[OK] Driver trovato        : {driver_sys}")
+    include_driver = True
 
     if os.path.isfile(ICON_ICO):
         print(f"[OK] Icona trovata         : {ICON_ICO}")
@@ -58,10 +122,16 @@ def build() -> None:
     # ------------------------------------------------------------------
     # Costruzione dei parametri di PyInstaller
     # ------------------------------------------------------------------
+    dist_dir = choose_dist_dir()
+    print(f"[OK] Output build           : {dist_dir}")
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",                       # singolo .exe
         "--windowed",                      # nessuna console
+        "--uac-admin",                     # manifesta richiesta UAC all'avvio
+        "--noconfirm",                     # non fermarsi su artefatti precedenti
+        f"--distpath={dist_dir}",          # fallback se dist\\HWIDSpoofer.exe e' bloccato
         f"--name={EXE_NAME}",             # nome dell'eseguibile
         # --- PyQt5 ---
         "--hidden-import=PyQt5",
@@ -75,6 +145,7 @@ def build() -> None:
         "--hidden-import=core.registry_utils",
         "--hidden-import=core.driver_utils",
         "--hidden-import=core.smbios_type1",
+        "--hidden-import=core.virtualization_manager",
         # --- Moduli gui del progetto ---
         "--hidden-import=gui",
         "--hidden-import=gui.main_window",
@@ -92,7 +163,7 @@ def build() -> None:
     # Driver kernel (.sys) — incluso nella radice della cartella temporanea
     if include_driver:
         # Sintassi Windows per --add-data: "sorgente;destinazione"
-        cmd.append(f"--add-data={DRIVER_SYS};.")
+        cmd.append(f"--add-data={driver_sys};.")
 
     # config.json — copiato accanto all'exe (non nella _MEI temporanea)
     config_json = os.path.join(BASE_DIR, "config.json")
@@ -120,7 +191,7 @@ def build() -> None:
 
     print("-" * 60)
     if result.returncode == 0:
-        exe_path = os.path.join(BASE_DIR, "dist", f"{EXE_NAME}.exe")
+        exe_path = os.path.join(dist_dir, f"{EXE_NAME}.exe")
         print(f"[OK] Build completata con successo!")
         print(f"     Eseguibile: {exe_path}")
     else:

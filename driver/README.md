@@ -113,23 +113,35 @@ debug appropriata.
 
 ## VT-x / EPT research lab
 
-Il branch di ricerca aggiunge `driver/hv/` e tre IOCTL:
+Il branch di ricerca aggiunge `driver/hv/` e quattro IOCTL:
 
 ```text
 0x80002020  IOCTL_START_HYPERVISOR
 0x80002024  IOCTL_STOP_HYPERVISOR
 0x80002028  IOCTL_SET_SMBIOS_EPT_HOOK
+0x8000202C  IOCTL_TEST_SMBIOS_EPT_HOOK
 ```
 
-La parte VMX esegue il probe di VMX/EPT, alloca VMXON/VMCS per logical
-processor, entra/esce da VMX operation con IPI e prepara un EPT identity map
-limitato al primo GiB. Il VMCS viene caricato e vengono impostati i controlli
-secondari/EPT, ma il branch di laboratorio **non esegue VMLAUNCH** e non
-sostituisce lo stato host/guest di Windows.
+La parte VMX esegue il probe di VMX/EPT, alloca VMXON/VMCS e uno stack host
+privato per logical processor, configura guest/host state e controlli del VMCS,
+quindi esegue `VMLAUNCH` su ogni CPU. `CPUID`, i VMCALL interni, gli accessi
+CR4 virtualizzati e le EPT violation vengono gestiti dal VM-exit dispatcher;
+il ritorno al guest usa `VMRESUME`. Lo stop usa un VMCALL interno per eseguire
+`VMXOFF` da VMX root e rientrare in modo controllato nel callback IPI.
 
-`IOCTL_SET_SMBIOS_EPT_HOOK` lavora esclusivamente su una pagina SMBIOS Type 1
-sintetica allocata dal driver. La pagina viene clonata e modificata, poi una
-singola EPT PTE di laboratorio viene preparata per puntare alla shadow page.
+L'EPT baseline è un identity map compatto dei primi 512 GiB con foglie da
+1 GiB. Solo la regione che contiene la pagina sintetica viene temporaneamente
+splittata a 2 MiB/4 KiB. Il leaf della pagina sintetica viene reso no-access:
+il primo accesso guest genera quindi una vera EPT violation, il handler lo
+redirige alla shadow page, esegue INVEPT e ritenta la stessa istruzione senza
+avanzare RIP.
+
+`IOCTL_TEST_SMBIOS_EPT_HOOK` arma questo percorso, legge la pagina sintetica
+dal guest, verifica che sia avvenuta almeno una EPT violation, confronta i dati
+con la shadow Type 1 validata e restituisce statistiche aggregate sui VM-exit.
+Al termine ripristina il mapping identity.
+
+Tutto il percorso EPT lavora esclusivamente su pagine allocate dal driver.
 Non viene cercato, letto, patchato o rimappato l'SMBIOS reale del computer.
 
 ### Hyper-V nested
@@ -152,3 +164,38 @@ I messaggi kernel usano il prefisso:
 
 Sono registrati probe VMX/EPT, VMXON/VMXOFF, preparazione EPT, mapping della
 pagina sintetica e contatori VM-exit/EPT del percorso di laboratorio.
+
+
+### Test end-to-end del laboratorio
+
+Dopo aver compilato, firmato e caricato il driver nella VM di test:
+
+```powershell
+python .\test_hv_ept.py
+```
+
+Il test:
+
+1. avvia l'hypervisor con `IOCTL_START_HYPERVISOR`;
+2. esegue `IOCTL_TEST_SMBIOS_EPT_HOOK`;
+3. controlla VMCS, EPT violation, redirect e snapshot Type 1;
+4. stampa contatori VM-exit/CPUID/VMCALL/INVEPT;
+5. invia sempre `IOCTL_STOP_HYPERVISOR` nel blocco `finally`.
+
+L'IOCTL diagnostico restituisce sempre la struttura
+`HV_LAB_EPT_TEST_RESULT` quando il buffer è valido. Il campo `Status`
+contiene il risultato effettivo del test anche quando una validazione interna
+fallisce, così user-mode può comunque stampare contatori e stato.
+
+### Requisiti e limiti del lab
+
+La configurazione EPT richiede che il processore o il livello di nested
+virtualization esponga EPT write-back, pagine EPT da 2 MiB e 1 GiB e INVEPT.
+Il mapping è volutamente limitato ai primi 512 GiB e usa un modello WB uniforme:
+è adatto a una VM di laboratorio controllata, non è un memory-type mapper
+generico per un hypervisor di produzione.
+
+Un VM-exit non previsto, un fallimento di VMRESUME o uno stato VMX non
+recuperabile vengono trattati come errori critici e producono diagnostica
+prima del fail-fast. Per questo il branch va eseguito esclusivamente in una VM
+dedicata con snapshot/checkpoint e kernel debugging disponibili.

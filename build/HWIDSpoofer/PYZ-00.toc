@@ -142,6 +142,10 @@
   ('core.smbios_type1',
    'C:\\Users\\Giuseppe Falliti\\Desktop\\Spoofer\\core\\smbios_type1.py',
    'PYMODULE'),
+  ('core.virtualization_manager',
+   'C:\\Users\\Giuseppe '
+   'Falliti\\Desktop\\Spoofer\\core\\virtualization_manager.py',
+   'PYMODULE'),
   ('csv',
    'C:\\Users\\Giuseppe '
    'Falliti\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\csv.py',

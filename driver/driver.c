@@ -386,6 +386,81 @@ HwidCreateClose(
     return STATUS_SUCCESS;
 }
 
+static
+VOID
+CollectHvLabStats(
+    _Inout_ PHV_LAB_EPT_TEST_RESULT Result
+    )
+{
+    ULONG index;
+    BOOLEAN vmcsValid = TRUE;
+
+    Result->ProcessorCount =
+        g_HvState.ProcessorCount;
+
+    if (g_HvState.CpuContexts == NULL ||
+        g_HvState.ProcessorCount == 0) {
+        Result->VmcsValid = 0;
+        return;
+    }
+
+    for (index = 0;
+         index < g_HvState.ProcessorCount;
+         ++index) {
+        PHV_CPU_CONTEXT cpu =
+            &g_HvState.CpuContexts[index];
+
+        if (InterlockedCompareExchange(
+                &cpu->VmcsValidated,
+                0,
+                0) == 0) {
+            vmcsValid = FALSE;
+        }
+
+        Result->VmExitCount +=
+            cpu->VmExitCount;
+        Result->EptViolationCount +=
+            cpu->EptViolationCount;
+        Result->CpuidExitCount +=
+            cpu->CpuidExitCount;
+        Result->VmcallExitCount +=
+            cpu->VmcallExitCount;
+        Result->InveptCount +=
+            cpu->InveptCount;
+        Result->VmResumeFailureCount +=
+            cpu->VmResumeFailureCount;
+        Result->VmExitCycles +=
+            cpu->VmExitCycles;
+    }
+
+    Result->VmcsValid =
+        vmcsValid ? 1 : 0;
+}
+
+static
+LONG64
+GetTotalEptViolations(
+    VOID
+    )
+{
+    ULONG index;
+    LONG64 total = 0;
+
+    if (g_HvState.CpuContexts == NULL) {
+        return 0;
+    }
+
+    for (index = 0;
+         index < g_HvState.ProcessorCount;
+         ++index) {
+        total +=
+            g_HvState.CpuContexts[index]
+                .EptViolationCount;
+    }
+
+    return total;
+}
+
 NTSTATUS
 HwidDeviceControl(
     _In_ PDEVICE_OBJECT DeviceObject,
@@ -573,6 +648,169 @@ HwidDeviceControl(
             status
             );
         break;
+
+    case IOCTL_TEST_SMBIOS_EPT_HOOK:
+    {
+        PHV_LAB_EPT_TEST_RESULT result;
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+        UCHAR expected[HV_LAB_SMBIOS_SNAPSHOT_SIZE];
+        ULONG expectedSize = 0;
+        LONG64 violationsBefore;
+        LONG64 violationsAfter;
+        NTSTATUS operationStatus;
+        BOOLEAN hookArmed = FALSE;
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < sizeof(HV_LAB_EPT_TEST_RESULT)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+
+        result =
+            (PHV_LAB_EPT_TEST_RESULT)
+                Irp->AssociatedIrp.SystemBuffer;
+
+        RtlZeroMemory(
+            result,
+            sizeof(*result)
+            );
+        RtlZeroMemory(
+            expected,
+            sizeof(expected)
+            );
+
+        result->ProcessorCount =
+            g_HvState.ProcessorCount;
+        result->SyntheticGpa =
+            g_HvState.Ept.LabSmbiosPhysical.QuadPart;
+        result->ShadowPhysical =
+            g_HvState.Ept.LabShadowPhysical.QuadPart;
+
+        if (InterlockedCompareExchange(
+                &g_HvState.Running,
+                0,
+                0) == 0) {
+            operationStatus = STATUS_DEVICE_NOT_READY;
+            goto CompleteLabEptTest;
+        }
+
+        operationStatus =
+            HvSetupEptForSmbios();
+
+        if (!NT_SUCCESS(operationStatus)) {
+            goto CompleteLabEptTest;
+        }
+
+        hookArmed = TRUE;
+
+        result->SyntheticGpa =
+            g_HvState.Ept.LabSmbiosPhysical.QuadPart;
+        result->ShadowPhysical =
+            g_HvState.Ept.LabShadowPhysical.QuadPart;
+
+        operationStatus =
+            HvCopyLabSmbiosShadowSnapshot(
+                expected,
+                sizeof(expected),
+                &expectedSize
+                );
+
+        if (!NT_SUCCESS(operationStatus)) {
+            goto CompleteLabEptTest;
+        }
+
+        if (expectedSize >
+            sizeof(result->Snapshot)) {
+            operationStatus =
+                STATUS_BUFFER_TOO_SMALL;
+            goto CompleteLabEptTest;
+        }
+
+        violationsBefore =
+            GetTotalEptViolations();
+
+        //
+        // This read uses the guest virtual address of the synthetic source
+        // page.  Its GPA is currently no-access in EPT, so the first byte
+        // forces a real EPT violation.  The VM-exit handler swaps the EPT leaf
+        // to the private shadow and VMRESUME retries this same copy.
+        //
+        RtlCopyMemory(
+            result->Snapshot,
+            g_HvState.Ept.LabSmbiosPage,
+            expectedSize
+            );
+
+        violationsAfter =
+            GetTotalEptViolations();
+
+        result->SnapshotSize =
+            expectedSize;
+        result->ShadowInstalled =
+            InterlockedCompareExchange(
+                &g_HvState.Ept.LabShadowInstalled,
+                0,
+                0) != 0 ? 1 : 0;
+        result->EptViolationObserved =
+            violationsAfter > violationsBefore
+                ? 1
+                : 0;
+        result->SnapshotMatchesShadow =
+            RtlCompareMemory(
+                result->Snapshot,
+                expected,
+                expectedSize) == expectedSize
+                    ? 1
+                    : 0;
+
+        if (!result->EptViolationObserved ||
+            !result->SnapshotMatchesShadow ||
+            !result->ShadowInstalled) {
+            operationStatus =
+                STATUS_UNSUCCESSFUL;
+            goto CompleteLabEptTest;
+        }
+
+        operationStatus = STATUS_SUCCESS;
+
+CompleteLabEptTest:
+        if (hookArmed) {
+            HvDisableLabSmbiosEptHook();
+        }
+
+        result->Status =
+            operationStatus;
+
+        CollectHvLabStats(result);
+
+        information = sizeof(*result);
+
+        //
+        // The IOCTL itself succeeded if the diagnostic structure could be
+        // returned.  The actual test result is carried in Result->Status so
+        // user mode still receives counters when validation fails.
+        //
+        status = STATUS_SUCCESS;
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            NT_SUCCESS(operationStatus)
+                ? DPFLTR_INFO_LEVEL
+                : DPFLTR_ERROR_LEVEL,
+            "[HwidSpoofer] Synthetic EPT test: status=0x%08X "
+            "vmcs=%u violation=%u shadow=%u match=%u exits=%llu ept=%llu\n",
+            operationStatus,
+            result->VmcsValid,
+            result->EptViolationObserved,
+            result->ShadowInstalled,
+            result->SnapshotMatchesShadow,
+            result->VmExitCount,
+            result->EptViolationCount
+            );
+
+        break;
+    }
 
     case IOCTL_QUERY_FAKE_HAL:
     {

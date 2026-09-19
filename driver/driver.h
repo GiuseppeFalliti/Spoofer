@@ -30,6 +30,7 @@
 #define IOCTL_START_HYPERVISOR     ((ULONG)0x80002020)
 #define IOCTL_STOP_HYPERVISOR      ((ULONG)0x80002024)
 #define IOCTL_SET_SMBIOS_EPT_HOOK  ((ULONG)0x80002028)
+#define IOCTL_TEST_SMBIOS_EPT_HOOK ((ULONG)0x8000202C)
 
 // Safe, METHOD_BUFFERED test path for retrieving the generated SMBIOS blob.
 #define IOCTL_QUERY_FAKE_SMBIOS \
@@ -46,6 +47,7 @@
 #define SMBIOS_BLOB_CAPACITY 512
 #define FIRMWARE_BLOB_CAPACITY 128
 #define HAL_BLOB_CAPACITY 64
+#define HV_LAB_SMBIOS_SNAPSHOT_SIZE 160
 
 #pragma pack(push, 1)
 
@@ -58,6 +60,33 @@ typedef struct _HV_CAPABILITY_QUERY {
 } HV_CAPABILITY_QUERY, *PHV_CAPABILITY_QUERY;
 
 C_ASSERT(sizeof(HV_CAPABILITY_QUERY) == 8);
+
+typedef struct _HV_LAB_EPT_TEST_RESULT {
+    NTSTATUS Status;
+
+    UCHAR VmcsValid;
+    UCHAR ShadowInstalled;
+    UCHAR EptViolationObserved;
+    UCHAR SnapshotMatchesShadow;
+
+    ULONG ProcessorCount;
+    ULONG SnapshotSize;
+
+    ULONG64 SyntheticGpa;
+    ULONG64 ShadowPhysical;
+
+    ULONG64 VmExitCount;
+    ULONG64 EptViolationCount;
+    ULONG64 CpuidExitCount;
+    ULONG64 VmcallExitCount;
+    ULONG64 InveptCount;
+    ULONG64 VmResumeFailureCount;
+    ULONG64 VmExitCycles;
+
+    UCHAR Snapshot[HV_LAB_SMBIOS_SNAPSHOT_SIZE];
+} HV_LAB_EPT_TEST_RESULT, *PHV_LAB_EPT_TEST_RESULT;
+
+C_ASSERT(sizeof(HV_LAB_EPT_TEST_RESULT) == 248);
 
 typedef struct _SMBIOS_TYPE1_HEADER {
     UCHAR Type;
