@@ -26,8 +26,13 @@
 #define IOCTL_QUERY_FAKE_FIRMWARE \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+// Safe, METHOD_BUFFERED test path for retrieving the generated HAL/PCI blob.
+#define IOCTL_QUERY_FAKE_HAL \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 #define SMBIOS_BLOB_CAPACITY 512
 #define FIRMWARE_BLOB_CAPACITY 128
+#define HAL_BLOB_CAPACITY 64
 
 #pragma pack(push, 1)
 
@@ -77,5 +82,10 @@ BuildFakeSmbiosBlob(
 
 NTSTATUS
 BuildFakeFirmwareBlob(
+    VOID
+    );
+
+NTSTATUS
+BuildFakeHalBlob(
     VOID
     );
