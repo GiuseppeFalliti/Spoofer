@@ -13,6 +13,12 @@ static volatile LONG g_SmbiosHookEnabled = 0;
 static UCHAR g_SmbiosBlob[SMBIOS_BLOB_CAPACITY];
 static ULONG g_SmbiosBlobSize = 0;
 
+<<<<<<< HEAD
+=======
+static UCHAR g_FirmwareBlob[FIRMWARE_BLOB_CAPACITY];
+static ULONG g_FirmwareBlobSize = 0;
+
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
 typedef NTSTATUS (NTAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
     _In_ ULONG SystemInformationClass,
     _Inout_updates_bytes_(SystemInformationLength) PVOID SystemInformation,
@@ -182,6 +188,62 @@ BuildFakeSmbiosBlob(
 }
 
 NTSTATUS
+<<<<<<< HEAD
+=======
+BuildFakeFirmwareBlob(
+    VOID
+    )
+{
+    static const CHAR fakeVariable[] = "SecureBootEnabled";
+    static const CHAR fakeValue[] = "0x0";
+    ULONG requiredSize;
+    ULONG offset = 0;
+
+    //
+    // Test-wire format used by the user-mode application:
+    //
+    //   SecureBootEnabled\0x0\0
+    //
+    // The first NUL terminates the variable name and separates it from the
+    // value; the second terminates the value.
+    //
+    requiredSize = (ULONG)sizeof(fakeVariable) + (ULONG)sizeof(fakeValue);
+
+    if (requiredSize > sizeof(g_FirmwareBlob)) {
+        g_FirmwareBlobSize = 0;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    RtlZeroMemory(g_FirmwareBlob, sizeof(g_FirmwareBlob));
+
+    RtlCopyMemory(
+        &g_FirmwareBlob[offset],
+        fakeVariable,
+        sizeof(fakeVariable)
+        );
+    offset += (ULONG)sizeof(fakeVariable);
+
+    RtlCopyMemory(
+        &g_FirmwareBlob[offset],
+        fakeValue,
+        sizeof(fakeValue)
+        );
+    offset += (ULONG)sizeof(fakeValue);
+
+    g_FirmwareBlobSize = offset;
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer] Fake firmware blob prepared: %lu bytes\n",
+        g_FirmwareBlobSize
+        );
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
 Hooked_NtQuerySystemInformation(
     _In_ ULONG SystemInformationClass,
     _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
@@ -320,6 +382,61 @@ HwidDeviceControl(
             );
         break;
 
+<<<<<<< HEAD
+=======
+    case IOCTL_QUERY_FAKE_FIRMWARE:
+    {
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+
+        if (InterlockedCompareExchange(&g_FirmwareHookEnabled, 0, 0) == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake firmware query rejected: hook disabled\n"
+                );
+            break;
+        }
+
+        status = BuildFakeFirmwareBlob();
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < g_FirmwareBlobSize) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer] Fake firmware output buffer too small: "
+                "provided=%lu required=%lu\n",
+                outputLength,
+                g_FirmwareBlobSize
+                );
+            break;
+        }
+
+        RtlCopyMemory(
+            Irp->AssociatedIrp.SystemBuffer,
+            g_FirmwareBlob,
+            g_FirmwareBlobSize
+            );
+
+        information = g_FirmwareBlobSize;
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer] Returned fake firmware blob: %lu bytes\n",
+            g_FirmwareBlobSize
+            );
+
+        break;
+    }
+
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
     case IOCTL_QUERY_FAKE_SMBIOS:
     {
         ULONG returnLength = 0;

@@ -3,7 +3,7 @@ Signature="$WINDOWS NT$"
 Class=System
 ClassGuid={4D36E97D-E325-11CE-BFC1-08002BE10318}
 Provider=%ProviderName%
-DriverVer = 09/19/2026,9.58.24.324
+DriverVer = 09/19/2026,11.9.5.874
 CatalogFile=hwid_virtualization_driver.cat
 PnpLockdown=1
 

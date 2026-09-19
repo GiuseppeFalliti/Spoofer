@@ -19,7 +19,12 @@ def get_resource_path(relative_path: str) -> str:
     if hasattr(sys, "_MEIPASS"):
         base_path = sys._MEIPASS
     else:
+<<<<<<< HEAD
         # Altrimenti, usa la directory del progetto (sviluppo)
+=======
+        # In sviluppo driver_utils.py si trova in core/, mentre il .sys è
+        # nella radice del progetto.
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     return os.path.join(base_path, relative_path)
@@ -65,10 +70,16 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
                     win32service.SERVICE_ALL_ACCESS,
                 )
 
+<<<<<<< HEAD
                 # PyInstaller --onefile estrae il .sys in una cartella _MEI
                 # diversa a ogni avvio. Se il servizio esiste già, ImagePath
                 # potrebbe quindi puntare a una vecchia cartella temporanea
                 # ormai eliminata. Aggiorna sempre il percorso prima di avviare.
+=======
+                # Il path estratto da PyInstaller --onefile cambia a ogni
+                # esecuzione. Aggiorna sempre ImagePath così il prossimo
+                # avvio del servizio usa il .sys corrente.
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
                 win32service.ChangeServiceConfig(
                     svc_handle,
                     win32service.SERVICE_NO_CHANGE,

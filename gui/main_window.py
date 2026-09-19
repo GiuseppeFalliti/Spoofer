@@ -340,12 +340,20 @@ class MainWindow(QMainWindow):
         if ioctl_pair is None:
             return
 
+<<<<<<< HEAD
         set_ioctl, clear_ioctl = ioctl_pair
         ioctl_code = set_ioctl if state == Qt.Checked else clear_ioctl
 
         # Questi IOCTL non richiedono payload: il codice stesso identifica
         # l'operazione SET/CLEAR.
         if not self._send_ioctl_safe(ioctl_code, b""):
+=======
+        enabled = state == Qt.Checked
+        ioctl_code = ioctl_pair[0] if enabled else ioctl_pair[1]
+        payload = 1 if enabled else 0
+        
+        if not self._send_ioctl_safe(ioctl_code, payload):
+>>>>>>> 1336f4c85be6eb8d37e0d411a9cdde26b37ef857
             # Se fallisce, ripristina lo stato della checkbox senza triggerare di nuovo il segnale
             sender.blockSignals(True)
             sender.setChecked(state != Qt.Checked)
