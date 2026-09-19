@@ -19,8 +19,14 @@ CopyFiles=DriverCopyFiles
 [DriverCopyFiles]
 hwid_virtualization_driver.sys
 
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+hwid_virtualization_driver.sys=1
+
 [DestinationDirs]
-DriverCopyFiles=12
+DriverCopyFiles=13
 
 [DriverInstall.NT.Services]
 AddService=HwidVirtualizationDriver,0x00000002,ServiceInstall
@@ -30,9 +36,10 @@ DisplayName=%ServiceName%
 ServiceType=1
 StartType=3
 ErrorControl=1
-ServiceBinary=%12%\hwid_virtualization_driver.sys
+ServiceBinary=%13%\hwid_virtualization_driver.sys
 
 [Strings]
 ProviderName="Research"
 DeviceDesc="HWID Virtualization Research Driver"
 ServiceName="HWID Virtualization Research Driver"
+DiskName="HWID Virtualization Research Driver Installation Media"
