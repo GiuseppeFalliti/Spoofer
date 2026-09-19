@@ -59,7 +59,29 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
             )
         except pywintypes.error as e:
             if e.winerror == 1073:  # ERROR_SERVICE_EXISTS
-                svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_ALL_ACCESS)
+                svc_handle = win32service.OpenService(
+                    scm_handle,
+                    service_name,
+                    win32service.SERVICE_ALL_ACCESS,
+                )
+
+                # PyInstaller --onefile estrae il .sys in una cartella _MEI
+                # diversa a ogni avvio. Se il servizio esiste già, ImagePath
+                # potrebbe quindi puntare a una vecchia cartella temporanea
+                # ormai eliminata. Aggiorna sempre il percorso prima di avviare.
+                win32service.ChangeServiceConfig(
+                    svc_handle,
+                    win32service.SERVICE_NO_CHANGE,
+                    win32service.SERVICE_NO_CHANGE,
+                    win32service.SERVICE_NO_CHANGE,
+                    driver_path,
+                    None,
+                    0,
+                    None,
+                    None,
+                    None,
+                    service_name,
+                )
             else:
                 raise
 
@@ -84,40 +106,110 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
 
 
 
-def unload_driver(service_name: str) -> bool:
+def unload_driver(service_name: str, delete_service: bool = False) -> bool:
+    """Arresta/scarica il driver kernel.
+
+    Per il normale pulsante "Scarica Driver" il servizio SCM resta registrato:
+    arrestare un SERVICE_KERNEL_DRIVER è sufficiente a scaricare il driver dal
+    kernel. Il percorso binario viene aggiornato al successivo load.
+
+    Impostare delete_service=True solo per una pulizia esplicita del servizio.
+    """
     scm_handle = None
     svc_handle = None
+
     try:
-        scm_handle = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_ALL_ACCESS)
+        scm_handle = win32service.OpenSCManager(
+            None,
+            None,
+            win32service.SC_MANAGER_ALL_ACCESS,
+        )
+
         delete_flag = getattr(win32con, "DELETE", 0x00010000)
-        svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_STOP | delete_flag)
-        try:
-            win32service.ControlService(svc_handle, win32service.SERVICE_CONTROL_STOP)
-            for _ in range(10):
+        access = (
+            win32service.SERVICE_STOP
+            | win32service.SERVICE_QUERY_STATUS
+            | (delete_flag if delete_service else 0)
+        )
+
+        svc_handle = win32service.OpenService(
+            scm_handle,
+            service_name,
+            access,
+        )
+
+        status = win32service.QueryServiceStatus(svc_handle)
+
+        if status[1] != win32service.SERVICE_STOPPED:
+            try:
+                win32service.ControlService(
+                    svc_handle,
+                    win32service.SERVICE_CONTROL_STOP,
+                )
+            except pywintypes.error as e:
+                # 1062 = già arrestato.
+                if e.winerror != 1062:
+                    raise RuntimeError(
+                        f"ControlService(STOP) fallita per '{service_name}': "
+                        f"WinError {e.winerror} - {e.strerror or e}"
+                    ) from e
+
+            # Attendi fino a 10 secondi che il driver risulti realmente STOPPED.
+            stopped = False
+            for _ in range(20):
                 status = win32service.QueryServiceStatus(svc_handle)
                 if status[1] == win32service.SERVICE_STOPPED:
+                    stopped = True
                     break
                 time.sleep(0.5)
-        except pywintypes.error as e:
-            if e.winerror != 1062:
-                raise
-        win32service.DeleteService(svc_handle)
-        print(f"[+] Servizio '{service_name}' fermato ed eliminato.")
+
+            if not stopped:
+                raise RuntimeError(
+                    f"Timeout: il driver '{service_name}' non è passato a "
+                    "SERVICE_STOPPED entro 10 secondi."
+                )
+
+        if delete_service:
+            try:
+                win32service.DeleteService(svc_handle)
+            except pywintypes.error as e:
+                # 1072 = già marked for deletion.
+                if e.winerror != 1072:
+                    raise RuntimeError(
+                        f"DeleteService fallita per '{service_name}': "
+                        f"WinError {e.winerror} - {e.strerror or e}"
+                    ) from e
+
+        print(
+            f"[+] Driver '{service_name}' scaricato."
+            + (" Servizio eliminato." if delete_service else "")
+        )
         return True
+
     except pywintypes.error as e:
         if e.winerror == 1060:
+            # Se il servizio non esiste, dal punto di vista del runtime il
+            # driver è già scaricato.
             print(f"[-] Il servizio '{service_name}' non esiste.")
-        else:
-            print(f"[-] Errore: {e}")
-        return False
+            return True
+
+        raise RuntimeError(
+            f"Errore SCM per '{service_name}': "
+            f"WinError {e.winerror} - {e.strerror or e}"
+        ) from e
+
     finally:
         if svc_handle:
-            try: win32service.CloseServiceHandle(svc_handle)
-            except: pass
-        if scm_handle:
-            try: win32service.CloseServiceHandle(scm_handle)
-            except: pass
+            try:
+                win32service.CloseServiceHandle(svc_handle)
+            except Exception:
+                pass
 
+        if scm_handle:
+            try:
+                win32service.CloseServiceHandle(scm_handle)
+            except Exception:
+                pass
 
 def send_ioctl(device_path: str, ioctl_code: int, in_buffer: bytes = b'', out_buffer_size: int = 0) -> tuple:
     handle = None

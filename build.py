@@ -12,18 +12,65 @@ ICON_ICO   = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
 EXE_NAME   = "HWIDSpoofer"
 
 
-def check_pyinstaller() -> None:
-    """Installa PyInstaller se non è disponibile nell'ambiente corrente."""
-    try:
-        import PyInstaller  # noqa: F401
-        print("[OK] PyInstaller è già installato.")
-    except ImportError:
-        print("[INFO] PyInstaller non trovato. Installazione in corso...")
+def check_build_dependencies() -> None:
+    """Verifica/installa le dipendenze necessarie prima della build."""
+    requirements = os.path.join(BASE_DIR, "requirements.txt")
+
+    required_imports = {
+        "PyInstaller": "pyinstaller",
+        "PyQt5": "PyQt5",
+        "win32service": "pywin32",
+        "win32file": "pywin32",
+        "pywintypes": "pywin32",
+    }
+
+    missing_packages = set()
+
+    for module_name, package_name in required_imports.items():
+        try:
+            __import__(module_name)
+        except ImportError:
+            missing_packages.add(package_name)
+
+    if not missing_packages:
+        print("[OK] Dipendenze di build già installate.")
+        return
+
+    print(
+        "[INFO] Dipendenze mancanti: "
+        + ", ".join(sorted(missing_packages))
+    )
+
+    if os.path.isfile(requirements):
+        print(f"[INFO] Installazione da: {requirements}")
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "pyinstaller"],
+            [sys.executable, "-m", "pip", "install", "-r", requirements],
             check=True,
         )
-        print("[OK] PyInstaller installato correttamente.")
+    else:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                *sorted(missing_packages),
+            ],
+            check=True,
+        )
+
+    # Verifica esplicita di pywin32: PyInstaller può completare la build anche
+    # se un hidden-import non è disponibile, producendo poi un errore runtime.
+    for module_name in ("win32service", "win32file", "win32con", "pywintypes"):
+        try:
+            __import__(module_name)
+        except ImportError as exc:
+            raise RuntimeError(
+                f"Dipendenza Windows mancante dopo l'installazione: "
+                f"{module_name}"
+            ) from exc
+
+    print("[OK] Dipendenze di build verificate.")
 
 
 def build() -> None:
@@ -60,6 +107,7 @@ def build() -> None:
     # ------------------------------------------------------------------
     cmd = [
         sys.executable, "-m", "PyInstaller",
+        "--clean",                         # pulisce la cache PyInstaller
         "--onefile",                       # singolo .exe
         "--windowed",                      # nessuna console
         f"--name={EXE_NAME}",             # nome dell'eseguibile
@@ -134,7 +182,7 @@ if __name__ == "__main__":
     print(f"  Build di {EXE_NAME}")
     print("=" * 60)
 
-    check_pyinstaller()
+    check_build_dependencies()
     build()
 
     print("=" * 60)

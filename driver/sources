@@ -1,0 +1,7 @@
+TARGETNAME=hwid_virtualization_driver
+TARGETTYPE=DRIVER
+TARGETPATH=obj
+SOURCES=driver.c
+
+# File legacy NTBuild fornito solo come riferimento.
+# Per WDK moderno usare hwid_virtualization_driver.vcxproj.
