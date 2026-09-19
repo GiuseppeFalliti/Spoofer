@@ -117,6 +117,15 @@ typedef struct _HV_STATE {
 
 extern HV_STATE g_HvState;
 
+VOID
+HvQueryCapabilities(
+    _Out_ PUCHAR VtxSupported,
+    _Out_ PUCHAR EptSupported,
+    _Out_ PUCHAR VmxBlocked,
+    _Out_ PUCHAR HypervisorPresent,
+    _Out_ PULONG ProcessorCount
+    );
+
 NTSTATUS HvInitialize(VOID);
 NTSTATUS HvAllocateVmcs(VOID);
 NTSTATUS HvStartVmx(VOID);
