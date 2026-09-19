@@ -1,0 +1,6 @@
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\driver.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\driver.obj
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\hv\vmx.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\vmx.obj
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\hv\vmcs.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\vmcs.obj
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\hv\ept.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\ept.obj
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\hv\vmexit.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\vmexit.obj
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\hv\smbios_shadow.c;C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\smbios_shadow.obj

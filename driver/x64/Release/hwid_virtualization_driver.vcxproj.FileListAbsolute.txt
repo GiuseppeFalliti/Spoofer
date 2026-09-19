@@ -1,0 +1,1 @@
+C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\hwid_virtualization_driver.sys
