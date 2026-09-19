@@ -244,12 +244,16 @@ class VirtualizationManager:
         )
 
     @staticmethod
-    def _boot_guid(alias: str) -> Optional[str]:
+    def _boot_entry_text(alias: str) -> str:
         result = VirtualizationManager._run(
             ["bcdedit.exe", "/enum", alias, "/v"],
             check=False,
         )
-        text = (result.stdout or "") + "\n" + (result.stderr or "")
+        return (result.stdout or "") + "\n" + (result.stderr or "")
+
+    @staticmethod
+    def _boot_guid(alias: str) -> Optional[str]:
+        text = VirtualizationManager._boot_entry_text(alias)
         match = re.search(
             r"\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
             r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}",
@@ -265,18 +269,28 @@ class VirtualizationManager:
     def default_boot_guid() -> Optional[str]:
         return VirtualizationManager._boot_guid("{default}")
 
+    @staticmethod
+    def current_boot_is_lab() -> bool:
+        # Evita falsi positivi dovuti a GUID stale/duplicati: una sessione
+        # viene considerata Lab solo se la voce {current} porta davvero la
+        # descrizione che abbiamo assegnato alla copia BCD.
+        text = VirtualizationManager._boot_entry_text("{current}")
+        return BOOT_DESCRIPTION.lower() in text.lower()
+
     def is_current_lab_session(self) -> bool:
         state = self.load_state()
-        if not state:
+        if not state or not self.current_boot_is_lab():
             return False
 
         lab_guid = state.get("boot_guid")
         current_guid = self.current_boot_guid()
-        return bool(
-            lab_guid
-            and current_guid
-            and str(lab_guid).lower() == str(current_guid).lower()
-        )
+
+        # La descrizione e' il discriminante principale. Se entrambi i GUID
+        # sono disponibili, richiedi anche la corrispondenza.
+        if lab_guid and current_guid:
+            return str(lab_guid).lower() == str(current_guid).lower()
+
+        return True
 
     def return_to_normal_boot(self) -> str:
         """Imposta il prossimo boot sulla voce Windows originale/default."""
@@ -325,13 +339,9 @@ class VirtualizationManager:
         lab_guid = state.get("boot_guid")
         current_guid = self.current_boot_guid()
 
-        if (
-            lab_guid
-            and current_guid
-            and str(lab_guid).lower() == str(current_guid).lower()
-        ):
-            # Siamo ancora avviati dalla voce Lab. Rimanda la pulizia al
-            # prossimo logon/boot invece di cancellare la voce corrente.
+        if self.current_boot_is_lab():
+            # Siamo ancora avviati da una voce che porta realmente la
+            # descrizione Lab. Non cancellare la voce BCD corrente.
             self._schedule_cleanup(state)
             return False
 
@@ -498,24 +508,29 @@ class VirtualizationManager:
         expected_guid = state.get("boot_guid")
         current_guid = self.current_boot_guid()
 
-        # Se siamo gia' tornati al Windows normale, il task di resume e'
-        # semplicemente stale: elimina la vecchia Lab e continua normalmente.
-        if (
-            expected_guid
-            and current_guid
-            and str(expected_guid).lower() != str(current_guid).lower()
-        ):
+        # La descrizione reale della voce corrente e' il primo discriminante.
+        # Se siamo su Windows normale, qualsiasi resume rimasto e' stale.
+        if not self.current_boot_is_lab():
             self._clear_bootstrap_tasks()
             self._delete_boot_entry(expected_guid)
             self._delete_state()
             return None
 
-        # Senza un GUID verificabile non affermare che la Lab sia attiva.
-        if not expected_guid or not current_guid:
-            self._clear_bootstrap_tasks()
-            return None
+        # Se la descrizione e' Lab ma il GUID noto non coincide, non eseguire
+        # il driver: e' uno stato BCD ambiguo che va ripulito.
+        if (
+            expected_guid
+            and current_guid
+            and str(expected_guid).lower() != str(current_guid).lower()
+        ):
+            self._schedule_cleanup(state)
+            raise RuntimeError(
+                "La voce corrente e' una VT-x Lab, ma il suo GUID non "
+                "corrisponde allo stato salvato. Riavvia nel Windows normale "
+                "per completare la pulizia."
+            )
 
-        # Solo da qui sappiamo che {current} e' davvero la voce Lab prevista.
+        # Solo da qui sappiamo che {current} e' davvero una voce Lab.
         if self.is_hypervisor_present():
             self._schedule_cleanup(state)
             raise RuntimeError(
