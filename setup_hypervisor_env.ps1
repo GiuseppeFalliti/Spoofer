@@ -145,20 +145,33 @@ else {
 }
 
 $vm = Get-VM -Name $VMName
-if ($vm.State -ne "Off") {
-    throw "The VM must be OFF before nested virtualization can be changed. Shut it down and run the script again."
-}
+$processor = Get-VMProcessor -VMName $VMName
 
-Write-Step "Exposing hardware virtualization extensions to the guest..."
-Set-VMProcessor -VMName $VMName -ExposeVirtualizationExtensions $true
+if (-not $processor.ExposeVirtualizationExtensions) {
+    if ($vm.State -ne "Off") {
+        throw "The VM must be OFF before nested virtualization can be enabled. Shut it down and run the script again."
+    }
+
+    Write-Step "Exposing hardware virtualization extensions to the guest..."
+    Set-VMProcessor -VMName $VMName -ExposeVirtualizationExtensions $true
+}
+else {
+    Write-Step "Nested virtualization is already enabled."
+}
 
 if ($EnableMacSpoofing) {
     Write-Step "Enabling MAC-address spoofing on the L1 VM network adapter..."
     Get-VMNetworkAdapter -VMName $VMName | Set-VMNetworkAdapter -MacAddressSpoofing On
 }
 
-Write-Step "Starting VM '$VMName'..."
-Start-VM -Name $VMName | Out-Null
+$vm = Get-VM -Name $VMName
+if ($vm.State -eq "Off") {
+    Write-Step "Starting VM '$VMName'..."
+    Start-VM -Name $VMName | Out-Null
+}
+else {
+    Write-Step "VM '$VMName' is already running."
+}
 
 Write-Host ""
 Write-Host "VM created/configured successfully." -ForegroundColor Green
