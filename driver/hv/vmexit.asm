@@ -18,6 +18,7 @@ EXTERN HvFatalVmInstructionFailure:PROC
 PUBLIC HvVmExitStub
 PUBLIC HvVmxLaunch
 PUBLIC HvHypercall
+PUBLIC HvInvept
 PUBLIC HvReadEs
 PUBLIC HvReadCs
 PUBLIC HvReadSs
@@ -86,6 +87,20 @@ HvHypercall PROC
     vmcall
     ret
 HvHypercall ENDP
+
+; ULONG HvInvept(ULONG Type, PVOID Descriptor)
+; Must be called in VMX root operation.
+HvInvept PROC
+    invept  rcx, [rdx]
+    jc      HvInveptFailed
+    jz      HvInveptFailed
+    xor     eax, eax
+    ret
+
+HvInveptFailed:
+    mov     eax, 1
+    ret
+HvInvept ENDP
 
 
 ; HOST_RSP is configured 16-byte aligned.  0D0h is a multiple of 16, so the
