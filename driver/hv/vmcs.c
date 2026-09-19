@@ -246,6 +246,7 @@ HvConfigureVmcs(
     ULONG64 cr3;
     ULONG64 cr4;
     ULONG64 rflags;
+    ULONG64 debugctl;
     ULONG64 pat;
     ULONG64 efer;
 
@@ -310,6 +311,7 @@ HvConfigureVmcs(
     cr4 = __readcr4();
     rflags = __readeflags();
 
+    debugctl = __readmsr(HV_IA32_DEBUGCTL);
     pat = __readmsr(HV_IA32_PAT);
     efer = __readmsr(HV_IA32_EFER);
 
@@ -506,6 +508,7 @@ HvConfigureVmcs(
         );
 
     HV_WRITE(HV_VMCS_GUEST_VMCS_LINK_POINTER, ~0ull);
+    HV_WRITE(HV_VMCS_GUEST_IA32_DEBUGCTL, debugctl);
     HV_WRITE(HV_VMCS_GUEST_IA32_PAT, pat);
     HV_WRITE(HV_VMCS_GUEST_IA32_EFER, efer);
 
