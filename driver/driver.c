@@ -1,4 +1,5 @@
 #include "driver.h"
+#include <intrin.h>
 
 //
 // This project deliberately DOES NOT install real kernel hooks.
@@ -48,6 +49,328 @@ typedef NTSTATUS (NTAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
     );
 
 static PFN_NT_QUERY_SYSTEM_INFORMATION g_OriginalNtQuerySystemInformation = NULL;
+
+#define IA32_FEATURE_CONTROL_MSR          0x0000003A
+#define IA32_VMX_BASIC_MSR                0x00000480
+#define IA32_VMX_PROCBASED_CTLS_MSR       0x00000482
+#define IA32_VMX_PROCBASED_CTLS2_MSR      0x0000048B
+#define IA32_VMX_EPT_VPID_CAP_MSR         0x0000048C
+
+#define CPUID_ECX_VMX                     (1UL << 5)
+#define CPUID_ECX_HYPERVISOR_PRESENT      (1UL << 31)
+
+#define FEATURE_CONTROL_LOCK              (1ULL << 0)
+#define FEATURE_CONTROL_VMX_OUTSIDE_SMX   (1ULL << 2)
+
+#define VMX_PRIMARY_ACTIVATE_SECONDARY    (1UL << 31)
+#define VMX_SECONDARY_ENABLE_EPT          (1UL << 1)
+
+#define EPT_CAP_PAGE_WALK_LENGTH_4        (1ULL << 6)
+#define EPT_CAP_WRITE_BACK                (1ULL << 14)
+
+static
+NTSTATUS
+HvReadMsrSafe(
+    _In_ ULONG Msr,
+    _Out_ PULONGLONG Value
+    )
+{
+    NTSTATUS exceptionCode;
+
+    if (Value == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *Value = 0;
+
+    __try {
+        *Value = __readmsr(Msr);
+        return STATUS_SUCCESS;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        exceptionCode = (NTSTATUS)GetExceptionCode();
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_WARNING_LEVEL,
+            "[HwidSpoofer][HV] RDMSR 0x%08lX failed: 0x%08X\n",
+            Msr,
+            exceptionCode
+            );
+
+        return exceptionCode;
+    }
+}
+
+BOOLEAN
+HvCheckHypervisorPresence(
+    VOID
+    )
+{
+    int cpuInfo[4] = { 0 };
+    int hvInfo[4] = { 0 };
+    CHAR vendorId[13];
+
+    RtlZeroMemory(vendorId, sizeof(vendorId));
+
+    __cpuid(cpuInfo, 1);
+
+    if ((((ULONG)cpuInfo[2]) & CPUID_ECX_HYPERVISOR_PRESENT) == 0) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer][HV] CPUID hypervisor-present bit: 0\n"
+            );
+
+        return FALSE;
+    }
+
+    __cpuid(hvInfo, 0x40000000);
+
+    //
+    // Hypervisor vendor strings use EBX, ECX, EDX order.
+    //
+    RtlCopyMemory(&vendorId[0], &hvInfo[1], sizeof(ULONG));
+    RtlCopyMemory(&vendorId[4], &hvInfo[2], sizeof(ULONG));
+    RtlCopyMemory(&vendorId[8], &hvInfo[3], sizeof(ULONG));
+    vendorId[12] = '\0';
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer][HV] Hypervisor present: vendor='%s', max leaf=0x%08X\n",
+        vendorId,
+        (ULONG)hvInfo[0]
+        );
+
+    return TRUE;
+}
+
+NTSTATUS
+HvCheckVtxSupport(
+    _Out_ PVTX_CAPABILITIES Capabilities
+    )
+{
+    int cpuInfo[4] = { 0 };
+    CHAR cpuVendor[13];
+
+    ULONGLONG featureControl = 0;
+    ULONGLONG vmxBasic = 0;
+    ULONGLONG procBasedControls = 0;
+    ULONGLONG procBasedControls2 = 0;
+    ULONGLONG eptVpidCapabilities = 0;
+
+    BOOLEAN featureControlLocked;
+    BOOLEAN vmxOutsideSmxEnabled;
+    BOOLEAN secondaryControlsAllowed;
+    BOOLEAN eptControlAllowed;
+    BOOLEAN eptFourLevelWalk;
+    BOOLEAN eptWriteBack;
+
+    NTSTATUS status;
+
+    if (Capabilities == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlZeroMemory(Capabilities, sizeof(*Capabilities));
+    RtlZeroMemory(cpuVendor, sizeof(cpuVendor));
+
+    Capabilities->ProcessorCount =
+        KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+
+    Capabilities->HypervisorPresent =
+        HvCheckHypervisorPresence();
+
+    __cpuid(cpuInfo, 0);
+
+    //
+    // Normal CPU vendor strings use EBX, EDX, ECX order.
+    //
+    RtlCopyMemory(&cpuVendor[0], &cpuInfo[1], sizeof(ULONG));
+    RtlCopyMemory(&cpuVendor[4], &cpuInfo[3], sizeof(ULONG));
+    RtlCopyMemory(&cpuVendor[8], &cpuInfo[2], sizeof(ULONG));
+    cpuVendor[12] = '\0';
+
+    if (RtlCompareMemory(cpuVendor, "GenuineIntel", 12) != 12) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_WARNING_LEVEL,
+            "[HwidSpoofer][HV] CPU vendor '%s' is not GenuineIntel; "
+            "Intel VT-x probe skipped\n",
+            cpuVendor
+            );
+
+        return STATUS_SUCCESS;
+    }
+
+    __cpuid(cpuInfo, 1);
+
+    Capabilities->VtxSupported =
+        ((((ULONG)cpuInfo[2]) & CPUID_ECX_VMX) != 0) ? TRUE : FALSE;
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer][HV] CPUID.01H:ECX.VMX=%u, hypervisor=%u, CPUs=%lu\n",
+        (ULONG)Capabilities->VtxSupported,
+        (ULONG)Capabilities->HypervisorPresent,
+        Capabilities->ProcessorCount
+        );
+
+    if (!Capabilities->VtxSupported) {
+        return STATUS_SUCCESS;
+    }
+
+    status = HvReadMsrSafe(
+        IA32_FEATURE_CONTROL_MSR,
+        &featureControl
+        );
+
+    if (!NT_SUCCESS(status)) {
+        Capabilities->VmxLocked = TRUE;
+        return STATUS_SUCCESS;
+    }
+
+    featureControlLocked =
+        ((featureControl & FEATURE_CONTROL_LOCK) != 0) ? TRUE : FALSE;
+
+    vmxOutsideSmxEnabled =
+        ((featureControl & FEATURE_CONTROL_VMX_OUTSIDE_SMX) != 0)
+            ? TRUE
+            : FALSE;
+
+    //
+    // For this diagnostic structure, VmxLocked means "VMXON outside SMX
+    // is not currently permitted by IA32_FEATURE_CONTROL".  Intel requires
+    // both the lock bit and Enable VMX Outside SMX for VMXON to be legal.
+    //
+    Capabilities->VmxLocked =
+        (!featureControlLocked || !vmxOutsideSmxEnabled) ? TRUE : FALSE;
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer][HV] IA32_FEATURE_CONTROL=0x%I64X "
+        "(Lock=%u, VMX outside SMX=%u, blocked=%u)\n",
+        featureControl,
+        (ULONG)featureControlLocked,
+        (ULONG)vmxOutsideSmxEnabled,
+        (ULONG)Capabilities->VmxLocked
+        );
+
+    status = HvReadMsrSafe(
+        IA32_VMX_BASIC_MSR,
+        &vmxBasic
+        );
+
+    if (!NT_SUCCESS(status)) {
+        return STATUS_SUCCESS;
+    }
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer][HV] IA32_VMX_BASIC=0x%I64X "
+        "(RevisionId=0x%08lX, RegionSize=%lu, TrueControls=%u)\n",
+        vmxBasic,
+        (ULONG)(vmxBasic & 0x7FFFFFFFULL),
+        (ULONG)((vmxBasic >> 32) & 0x1FFFULL),
+        (ULONG)((vmxBasic >> 55) & 0x1ULL)
+        );
+
+    //
+    // Before reading IA32_VMX_EPT_VPID_CAP, verify that secondary
+    // processor-based controls exist and that their allowed-1 settings
+    // permit Enable EPT. This avoids treating the capability MSR as an
+    // unconditional indication that EPT can actually be enabled.
+    //
+    status = HvReadMsrSafe(
+        IA32_VMX_PROCBASED_CTLS_MSR,
+        &procBasedControls
+        );
+
+    if (!NT_SUCCESS(status)) {
+        return STATUS_SUCCESS;
+    }
+
+    secondaryControlsAllowed =
+        ((((ULONG)(procBasedControls >> 32)) &
+          VMX_PRIMARY_ACTIVATE_SECONDARY) != 0)
+            ? TRUE
+            : FALSE;
+
+    if (!secondaryControlsAllowed) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer][HV] Secondary VM-execution controls are not available\n"
+            );
+
+        return STATUS_SUCCESS;
+    }
+
+    status = HvReadMsrSafe(
+        IA32_VMX_PROCBASED_CTLS2_MSR,
+        &procBasedControls2
+        );
+
+    if (!NT_SUCCESS(status)) {
+        return STATUS_SUCCESS;
+    }
+
+    eptControlAllowed =
+        ((((ULONG)(procBasedControls2 >> 32)) &
+          VMX_SECONDARY_ENABLE_EPT) != 0)
+            ? TRUE
+            : FALSE;
+
+    if (!eptControlAllowed) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer][HV] Secondary controls do not allow Enable EPT\n"
+            );
+
+        return STATUS_SUCCESS;
+    }
+
+    status = HvReadMsrSafe(
+        IA32_VMX_EPT_VPID_CAP_MSR,
+        &eptVpidCapabilities
+        );
+
+    if (!NT_SUCCESS(status)) {
+        return STATUS_SUCCESS;
+    }
+
+    eptFourLevelWalk =
+        ((eptVpidCapabilities & EPT_CAP_PAGE_WALK_LENGTH_4) != 0)
+            ? TRUE
+            : FALSE;
+
+    eptWriteBack =
+        ((eptVpidCapabilities & EPT_CAP_WRITE_BACK) != 0)
+            ? TRUE
+            : FALSE;
+
+    Capabilities->EptSupported =
+        (eptControlAllowed && eptFourLevelWalk) ? TRUE : FALSE;
+
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID,
+        DPFLTR_INFO_LEVEL,
+        "[HwidSpoofer][HV] IA32_VMX_EPT_VPID_CAP=0x%I64X "
+        "(EPT control=%u, 4-level walk=%u, WB=%u, EPT supported=%u)\n",
+        eptVpidCapabilities,
+        (ULONG)eptControlAllowed,
+        (ULONG)eptFourLevelWalk,
+        (ULONG)eptWriteBack,
+        (ULONG)Capabilities->EptSupported
+        );
+
+    return STATUS_SUCCESS;
+}
 
 static
 VOID
@@ -456,6 +779,83 @@ HwidDeviceControl(
             "[HwidSpoofer] SMBIOS hook simulation DISABLED\n"
             );
         break;
+
+    case IOCTL_CHECK_VTX_SUPPORT:
+    {
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+        PVTX_CAPABILITIES capabilities;
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < sizeof(VTX_CAPABILITIES)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer][HV] VT-x capability output buffer too small: "
+                "provided=%lu required=%Iu\n",
+                outputLength,
+                sizeof(VTX_CAPABILITIES)
+                );
+
+            break;
+        }
+
+        capabilities =
+            (PVTX_CAPABILITIES)Irp->AssociatedIrp.SystemBuffer;
+
+        status = HvCheckVtxSupport(capabilities);
+
+        if (NT_SUCCESS(status)) {
+            information = sizeof(VTX_CAPABILITIES);
+
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_INFO_LEVEL,
+                "[HwidSpoofer][HV] Capability report returned: "
+                "VT-x=%u EPT=%u VMX-blocked=%u hypervisor=%u CPUs=%lu\n",
+                (ULONG)capabilities->VtxSupported,
+                (ULONG)capabilities->EptSupported,
+                (ULONG)capabilities->VmxLocked,
+                (ULONG)capabilities->HypervisorPresent,
+                capabilities->ProcessorCount
+                );
+        }
+
+        break;
+    }
+
+    case IOCTL_CHECK_HYPERVISOR:
+    {
+        ULONG outputLength =
+            stack->Parameters.DeviceIoControl.OutputBufferLength;
+        PBOOLEAN hypervisorPresent;
+
+        if (Irp->AssociatedIrp.SystemBuffer == NULL ||
+            outputLength < sizeof(BOOLEAN)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "[HwidSpoofer][HV] Hypervisor output buffer too small: "
+                "provided=%lu required=%Iu\n",
+                outputLength,
+                sizeof(BOOLEAN)
+                );
+
+            break;
+        }
+
+        hypervisorPresent =
+            (PBOOLEAN)Irp->AssociatedIrp.SystemBuffer;
+
+        *hypervisorPresent = HvCheckHypervisorPresence();
+        information = sizeof(BOOLEAN);
+
+        break;
+    }
 
     case IOCTL_QUERY_FAKE_HAL:
     {
