@@ -109,3 +109,46 @@ I cambi di stato vengono registrati con `DbgPrintEx`, ad esempio:
 
 I messaggi possono essere osservati con un debugger kernel/configurazione di
 debug appropriata.
+
+
+## VT-x / EPT research lab
+
+Il branch di ricerca aggiunge `driver/hv/` e tre IOCTL:
+
+```text
+0x80002020  IOCTL_START_HYPERVISOR
+0x80002024  IOCTL_STOP_HYPERVISOR
+0x80002028  IOCTL_SET_SMBIOS_EPT_HOOK
+```
+
+La parte VMX esegue il probe di VMX/EPT, alloca VMXON/VMCS per logical
+processor, entra/esce da VMX operation con IPI e prepara un EPT identity map
+limitato al primo GiB. Il VMCS viene caricato e vengono impostati i controlli
+secondari/EPT, ma il branch di laboratorio **non esegue VMLAUNCH** e non
+sostituisce lo stato host/guest di Windows.
+
+`IOCTL_SET_SMBIOS_EPT_HOOK` lavora esclusivamente su una pagina SMBIOS Type 1
+sintetica allocata dal driver. La pagina viene clonata e modificata, poi una
+singola EPT PTE di laboratorio viene preparata per puntare alla shadow page.
+Non viene cercato, letto, patchato o rimappato l'SMBIOS reale del computer.
+
+### Hyper-V nested
+
+Eseguire `setup_hypervisor_env.ps1` sull'host Hyper-V. Lo script crea una VM
+Generation 2, abilita `ExposeVirtualizationExtensions` a VM spenta e può
+configurare RDP/test-signing tramite PowerShell Direct.
+
+Per questo laboratorio non abilitare il ruolo Hyper-V dentro la VM guest:
+le estensioni VMX esposte dal parent devono essere disponibili direttamente
+al driver di ricerca.
+
+### Debug
+
+I messaggi kernel usano il prefisso:
+
+```text
+[HwidHv]
+```
+
+Sono registrati probe VMX/EPT, VMXON/VMXOFF, preparazione EPT, mapping della
+pagina sintetica e contatori VM-exit/EPT del percorso di laboratorio.

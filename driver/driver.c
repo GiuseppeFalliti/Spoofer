@@ -1,4 +1,5 @@
 #include "driver.h"
+#include "hv/hv.h"
 
 //
 // This project deliberately DOES NOT install real kernel hooks.
@@ -457,6 +458,47 @@ HwidDeviceControl(
             );
         break;
 
+    case IOCTL_START_HYPERVISOR:
+        status = HvStartVmx();
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_ERROR_LEVEL,
+            "[HwidSpoofer] Hypervisor lab start: 0x%08X\n",
+            status
+            );
+        break;
+
+    case IOCTL_STOP_HYPERVISOR:
+        HvStopVmx();
+        status = STATUS_SUCCESS;
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_INFO_LEVEL,
+            "[HwidSpoofer] Hypervisor lab stopped\n"
+            );
+        break;
+
+    case IOCTL_SET_SMBIOS_EPT_HOOK:
+        if (InterlockedCompareExchange(
+                &g_HvState.Running,
+                0,
+                0) == 0) {
+            status = STATUS_DEVICE_NOT_READY;
+            break;
+        }
+
+        status = HvSetupEptForSmbios();
+
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_ERROR_LEVEL,
+            "[HwidSpoofer] Synthetic SMBIOS EPT lab mapping: 0x%08X\n",
+            status
+            );
+        break;
+
     case IOCTL_QUERY_FAKE_HAL:
     {
         ULONG outputLength =
@@ -639,6 +681,8 @@ HwidUnload(
     InterlockedExchange(&g_HalHookEnabled, 0);
     InterlockedExchange(&g_SmbiosHookEnabled, 0);
     g_OriginalNtQuerySystemInformation = NULL;
+
+    HvShutdown();
 
     RtlInitUnicodeString(&dosDeviceName, HWID_DOS_DEVICE_NAME);
     IoDeleteSymbolicLink(&dosDeviceName);

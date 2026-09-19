@@ -88,8 +88,20 @@
 
   <ItemGroup>
     <ClCompile Include="driver.c" />
+    <ClCompile Include="hv\vmx.c" />
+    <ClCompile Include="hv\vmcs.c" />
+    <ClCompile Include="hv\ept.c" />
+    <ClCompile Include="hv\vmexit.c" />
+    <ClCompile Include="hv\smbios_shadow.c" />
     <ClInclude Include="driver.h" />
+    <ClInclude Include="hv\hv.h" />
     <Inf Include="hwid_virtualization_driver.inf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <MASM Include="hv\vmexit.asm">
+      <ObjectFileName>$(IntDir)vmexit_asm.obj</ObjectFileName>
+    </MASM>
   </ItemGroup>
 
   <ItemGroup>
