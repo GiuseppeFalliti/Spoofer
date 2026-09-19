@@ -14,7 +14,8 @@ import win32file
 
 
 BOOT_DESCRIPTION = "Windows - HWID VT-x Runtime"
-RUNONCE_NAME = "HWIDSpooferVtxResume"
+TASK_RESUME_NAME = "HWIDSpoofer-VtxResume"
+TASK_CLEANUP_NAME = "HWIDSpoofer-VtxCleanup"
 SERVICE_NAME = "HWIDVirtualizationDriver"
 DEVICE_PATH = r"\\.\HwidSpoofer"
 
@@ -169,38 +170,43 @@ class VirtualizationManager:
         return subprocess.list2cmdline(parts)
 
     @staticmethod
-    def _set_runonce(command_line: str) -> None:
-        path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
-        with winreg.CreateKeyEx(
-            winreg.HKEY_CURRENT_USER,
-            path,
-            0,
-            winreg.KEY_SET_VALUE,
-        ) as key:
-            winreg.SetValueEx(
-                key,
-                RUNONCE_NAME,
-                0,
-                winreg.REG_SZ,
+    def _schedule_logon_task(task_name: str, command_line: str) -> None:
+        # /IT rende il task interattivo; /RL HIGHEST mantiene i privilegi
+        # gia' autorizzati dall'utente durante la preparazione.
+        VirtualizationManager._run(
+            [
+                "schtasks.exe",
+                "/Create",
+                "/SC",
+                "ONLOGON",
+                "/TN",
+                task_name,
+                "/TR",
                 command_line,
-            )
+                "/RL",
+                "HIGHEST",
+                "/IT",
+                "/F",
+            ]
+        )
 
     @staticmethod
-    def _clear_runonce() -> None:
-        path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
-        try:
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                path,
-                0,
-                winreg.KEY_SET_VALUE,
-            ) as key:
-                try:
-                    winreg.DeleteValue(key, RUNONCE_NAME)
-                except FileNotFoundError:
-                    pass
-        except FileNotFoundError:
-            pass
+    def _delete_task(task_name: str) -> None:
+        VirtualizationManager._run(
+            [
+                "schtasks.exe",
+                "/Delete",
+                "/TN",
+                task_name,
+                "/F",
+            ],
+            check=False,
+        )
+
+    @staticmethod
+    def _clear_bootstrap_tasks() -> None:
+        VirtualizationManager._delete_task(TASK_RESUME_NAME)
+        VirtualizationManager._delete_task(TASK_CLEANUP_NAME)
 
     @staticmethod
     def _save_state(state: dict) -> None:
@@ -257,13 +263,14 @@ class VirtualizationManager:
         cleanup_command = self._self_command("--cleanup-vtx-lab")
         state["cleanup_command"] = cleanup_command
         self._save_state(state)
-        self._set_runonce(cleanup_command)
+        self._delete_task(TASK_RESUME_NAME)
+        self._schedule_logon_task(TASK_CLEANUP_NAME, cleanup_command)
 
     def cleanup_after_lab_if_safe(self) -> bool:
         """Rimuove la voce Lab solo quando non e' la voce Windows corrente."""
         state = self.load_state()
         if not state:
-            self._clear_runonce()
+            self._clear_bootstrap_tasks()
             return True
 
         lab_guid = state.get("boot_guid")
@@ -279,7 +286,7 @@ class VirtualizationManager:
             self._schedule_cleanup(state)
             return False
 
-        self._clear_runonce()
+        self._clear_bootstrap_tasks()
         self._delete_boot_entry(lab_guid)
         self._delete_state()
         return True
@@ -347,7 +354,8 @@ class VirtualizationManager:
             )
 
             resume_command = self._self_command("--resume-vtx-lab")
-            self._set_runonce(resume_command)
+            self._clear_bootstrap_tasks()
+            self._schedule_logon_task(TASK_RESUME_NAME, resume_command)
 
             self._save_state(
                 {
@@ -360,7 +368,7 @@ class VirtualizationManager:
 
             return created_guid
         except Exception:
-            self._clear_runonce()
+            self._clear_bootstrap_tasks()
             if created_guid:
                 self._delete_boot_entry(created_guid)
             self._delete_state()
@@ -410,6 +418,7 @@ class VirtualizationManager:
     def finish_resume(self) -> VtxCapabilities:
         """Completa il resume: verifica il boot Lab, carica il driver e misura VMX/EPT."""
         state = self.load_state()
+        self._delete_task(TASK_RESUME_NAME)
 
         if self.is_hypervisor_present():
             if state:
@@ -434,6 +443,6 @@ class VirtualizationManager:
             state["phase"] = "lab_active"
             self._schedule_cleanup(state)
         else:
-            self._clear_runonce()
+            self._clear_bootstrap_tasks()
 
         return capabilities
