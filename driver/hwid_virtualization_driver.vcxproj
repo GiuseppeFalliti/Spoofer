@@ -99,7 +99,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <MASM Include="hv\vmexit_stub.asm" />
+    <MASM Include="hv\vmexit.asm">
+      <ObjectFileName>$(IntDir)vmexit_asm.obj</ObjectFileName>
+    </MASM>
   </ItemGroup>
 
   <ItemGroup>
