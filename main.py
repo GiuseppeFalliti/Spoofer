@@ -1,6 +1,7 @@
 import sys
 import os
 import ctypes
+import subprocess
 
 # ---------------------------------------------------------------------------
 # Utility: in modalità --windowed non esiste sys.stdin/stdout.
@@ -34,22 +35,179 @@ def is_admin() -> bool:
         return False
 
 
+def _ask_yes_no(title: str, message: str) -> bool:
+    # MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2
+    result = ctypes.windll.user32.MessageBoxW(
+        0,
+        message,
+        title,
+        0x00000004 | 0x00000030 | 0x00000100,
+    )
+    return result == 6  # IDYES
+
+
+def _relaunch_as_admin() -> bool:
+    """Rilancia il processo con UAC mantenendo gli argomenti correnti."""
+    try:
+        if getattr(sys, "frozen", False):
+            executable = sys.executable
+            parameters = subprocess.list2cmdline(sys.argv[1:])
+        else:
+            executable = sys.executable
+            parameters = subprocess.list2cmdline(
+                [os.path.abspath(sys.argv[0]), *sys.argv[1:]]
+            )
+
+        rc = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            executable,
+            parameters,
+            os.getcwd(),
+            1,
+        )
+        return rc > 32
+    except Exception:
+        return False
+
+
+def _handle_virtualization_bootstrap() -> bool:
+    """Gestisce il boot VT-x Lab. False indica che il processo deve terminare."""
+    from core.virtualization_manager import VirtualizationManager
+
+    manager = VirtualizationManager()
+    resume_requested = "--resume-vtx-lab" in sys.argv
+
+    if resume_requested:
+        try:
+            capabilities = manager.finish_resume()
+        except Exception as exc:
+            _msgbox(
+                "VT-x Lab - errore",
+                "Impossibile completare il resume VT-x Lab:\n\n"
+                f"{exc}\n\n"
+                "Windows continuera' con la configurazione corrente.",
+                icon=0x10,
+            )
+            return True
+
+        if (
+            capabilities.vtx_supported
+            and capabilities.ept_supported
+            and not capabilities.vmx_blocked
+            and not capabilities.hypervisor_present
+        ):
+            _msgbox(
+                "VT-x Lab pronto",
+                "Riavvio VT-x Lab completato.\n\n"
+                f"VT-x: SI\n"
+                f"EPT: SI\n"
+                f"Hypervisor Windows: NO\n"
+                f"Processori logici: {capabilities.processor_count}\n\n"
+                "Il driver kernel e' stato caricato. "
+                "L'avvio del laboratorio VMX/EPT resta un'azione esplicita "
+                "dall'applicazione.",
+                icon=0x40,
+            )
+        else:
+            _msgbox(
+                "VT-x Lab non disponibile",
+                "Il driver e' stato caricato, ma i requisiti VT-x/EPT "
+                "non risultano disponibili:\n\n"
+                f"VT-x: {capabilities.vtx_supported}\n"
+                f"EPT: {capabilities.ept_supported}\n"
+                f"VMX bloccato: {capabilities.vmx_blocked}\n"
+                f"Hypervisor Windows: {capabilities.hypervisor_present}",
+                icon=0x30,
+            )
+        return True
+
+    try:
+        hypervisor_present = manager.is_hypervisor_present()
+    except Exception as exc:
+        _msgbox(
+            "Controllo virtualizzazione",
+            "Non e' stato possibile verificare lo stato dell'hypervisor "
+            f"Windows:\n\n{exc}\n\n"
+            "L'applicazione verra' avviata senza modificare il boot.",
+            icon=0x30,
+        )
+        return True
+
+    if not hypervisor_present:
+        return True
+
+    if manager.is_vbs_managed_by_policy():
+        _msgbox(
+            "VT-x Lab non disponibile",
+            "La Virtualization Based Security risulta configurata tramite "
+            "criteri di Windows.\n\n"
+            "L'applicazione non modifichera' o aggirera' policy gestite.",
+            icon=0x30,
+        )
+        return True
+
+    bitlocker = manager.bitlocker_protection_enabled()
+    bitlocker_note = ""
+    if bitlocker is True:
+        bitlocker_note = (
+            "\n\nBitLocker risulta attivo. La configurazione non verra' "
+            "sospesa automaticamente: assicurati di avere disponibile la "
+            "chiave di ripristino prima di continuare."
+        )
+
+    confirmed = _ask_yes_no(
+        "Preparare VT-x Lab?",
+        "Windows Hypervisor e' attivo e impedisce l'accesso diretto a VT-x/EPT.\n\n"
+        "L'applicazione puo' creare una voce di avvio temporanea che, SOLO "
+        "per il prossimo riavvio, avvia Windows con l'hypervisor disattivato.\n\n"
+        "Il boot Windows normale non viene modificato. Hyper-V, WSL2, "
+        "Windows Sandbox e le funzioni che dipendono da VBS non saranno "
+        "disponibili durante quella sessione."
+        + bitlocker_note
+        + "\n\nRiavviare ora nella modalita' VT-x Lab?",
+    )
+
+    if not confirmed:
+        return True
+
+    try:
+        manager.prepare_one_shot_lab_boot()
+    except Exception as exc:
+        _msgbox(
+            "Preparazione VT-x Lab fallita",
+            f"Impossibile preparare il boot temporaneo:\n\n{exc}",
+            icon=0x10,
+        )
+        return True
+
+    _msgbox(
+        "VT-x Lab",
+        "La modalita' VT-x Lab e' pronta. Il PC verra' riavviato ora.\n\n"
+        "Dopo l'accesso a Windows l'applicazione ripartira' automaticamente "
+        "e verifichera' VT-x/EPT.",
+        icon=0x40,
+    )
+    manager.reboot_now()
+    return False
+
+
 def main():
     _fix_windowed_streams()
 
     if not is_admin():
+        if _relaunch_as_admin():
+            return
+
         msg = (
             "Questo programma richiede privilegi di amministratore.\n\n"
-            "Fai clic destro sull'eseguibile e seleziona\n"
-            "'Esegui come amministratore'."
+            "La richiesta UAC non e' stata completata."
         )
-        if _no_stdin():
-            # Modalità GUI/windowed: usa una MessageBox invece di input()
-            _msgbox("Privilegi insufficienti", msg, icon=0x10)
-        else:
-            print(msg)
-            input("\nPremi Invio per uscire...")
+        _msgbox("Privilegi insufficienti", msg, icon=0x10)
         sys.exit(1)
+
+    if not _handle_virtualization_bootstrap():
+        return
 
     try:
         from gui.main_window import run_gui
