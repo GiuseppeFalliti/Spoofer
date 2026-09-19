@@ -132,6 +132,59 @@ HvCpuReportsEpt(
         HV_SECONDARY_ENABLE_EPT) != 0;
 }
 
+VOID
+HvQueryCapabilities(
+    _Out_ PUCHAR VtxSupported,
+    _Out_ PUCHAR EptSupported,
+    _Out_ PUCHAR VmxBlocked,
+    _Out_ PUCHAR HypervisorPresent,
+    _Out_ PULONG ProcessorCount
+    )
+{
+    BOOLEAN vmx;
+    BOOLEAN ept = FALSE;
+    BOOLEAN featureControl = FALSE;
+
+    if (VtxSupported == NULL ||
+        EptSupported == NULL ||
+        VmxBlocked == NULL ||
+        HypervisorPresent == NULL ||
+        ProcessorCount == NULL) {
+        return;
+    }
+
+    *VtxSupported = 0;
+    *EptSupported = 0;
+    *VmxBlocked = 0;
+    *HypervisorPresent = 0;
+    *ProcessorCount = 0;
+
+    if (!HvCpuIsIntel()) {
+        *ProcessorCount =
+            KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+        return;
+    }
+
+    vmx = HvCpuReportsVmx();
+    *VtxSupported = vmx ? 1 : 0;
+    *HypervisorPresent =
+        HvCpuReportsHypervisor() ? 1 : 0;
+    *ProcessorCount =
+        KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+
+    if (!vmx) {
+        return;
+    }
+
+    featureControl = HvFeatureControlAllowsVmx();
+    *VmxBlocked = featureControl ? 0 : 1;
+
+    if (featureControl) {
+        ept = HvCpuReportsEpt();
+        *EptSupported = ept ? 1 : 0;
+    }
+}
+
 static
 PVOID
 HvAllocateVmxPage(
