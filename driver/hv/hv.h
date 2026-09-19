@@ -28,6 +28,7 @@
 #define HV_IA32_SYSENTER_CS             0x174
 #define HV_IA32_SYSENTER_ESP            0x175
 #define HV_IA32_SYSENTER_EIP            0x176
+#define HV_IA32_DEBUGCTL                0x1D9
 #define HV_IA32_PAT                     0x277
 #define HV_IA32_EFER                    0xC0000080
 #define HV_IA32_FS_BASE                 0xC0000100
@@ -70,6 +71,7 @@
 #define HV_VMCS_EPT_POINTER             0x201A
 
 #define HV_VMCS_GUEST_VMCS_LINK_POINTER 0x2800
+#define HV_VMCS_GUEST_IA32_DEBUGCTL     0x2802
 #define HV_VMCS_GUEST_IA32_PAT          0x2804
 #define HV_VMCS_GUEST_IA32_EFER         0x2806
 #define HV_VMCS_HOST_IA32_PAT           0x2C00
@@ -179,6 +181,7 @@
 
 #define HV_EXIT_REASON_CPUID             10u
 #define HV_EXIT_REASON_VMCALL            18u
+#define HV_EXIT_REASON_CR_ACCESS         28u
 #define HV_EXIT_REASON_EPT_VIOLATION     48u
 
 #define HV_VMEXIT_ACTION_RESUME          0u
