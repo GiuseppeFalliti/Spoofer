@@ -111,7 +111,11 @@ def _handle_virtualization_bootstrap() -> bool:
             )
             return True
 
-        if (
+        if capabilities is None:
+            # Task stale/orfano oppure Windows normale: continua con il
+            # normale rilevamento Hyper-V senza mostrare falsi errori Lab.
+            resume_requested = False
+        elif (
             capabilities.vtx_supported
             and capabilities.ept_supported
             and not capabilities.vmx_blocked
@@ -129,7 +133,7 @@ def _handle_virtualization_bootstrap() -> bool:
                 "dall'applicazione.",
                 icon=0x40,
             )
-        else:
+        elif capabilities is not None:
             _msgbox(
                 "VT-x Lab non disponibile",
                 "Il driver e' stato caricato, ma i requisiti VT-x/EPT "
@@ -140,7 +144,9 @@ def _handle_virtualization_bootstrap() -> bool:
                 f"Hypervisor Windows: {capabilities.hypervisor_present}",
                 icon=0x30,
             )
-        return True
+
+        if capabilities is not None:
+            return True
 
     # Recovery automatico: se l'utente e' ancora avviato dalla vecchia voce
     # Lab e quella sessione non ha realmente liberato VMX, non tentare di
