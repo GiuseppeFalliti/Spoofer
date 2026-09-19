@@ -14,7 +14,7 @@ static UCHAR g_SmbiosBlob[SMBIOS_BLOB_CAPACITY];
 static ULONG g_SmbiosBlobSize = 0;
 
 typedef NTSTATUS (NTAPI *PFN_NT_QUERY_SYSTEM_INFORMATION)(
-    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    _In_ ULONG SystemInformationClass,
     _Inout_updates_bytes_(SystemInformationLength) PVOID SystemInformation,
     _In_ ULONG SystemInformationLength,
     _Out_opt_ PULONG ReturnLength
@@ -183,7 +183,7 @@ BuildFakeSmbiosBlob(
 
 NTSTATUS
 Hooked_NtQuerySystemInformation(
-    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    _In_ ULONG SystemInformationClass,
     _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
     _In_ ULONG SystemInformationLength,
     _Out_opt_ PULONG ReturnLength
@@ -342,7 +342,7 @@ HwidDeviceControl(
         }
 
         status = Hooked_NtQuerySystemInformation(
-            (SYSTEM_INFORMATION_CLASS)0,
+            0,
             Irp->AssociatedIrp.SystemBuffer,
             outputLength,
             &returnLength
