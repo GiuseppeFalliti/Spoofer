@@ -76,7 +76,20 @@ def _handle_virtualization_bootstrap() -> bool:
     from core.virtualization_manager import VirtualizationManager
 
     manager = VirtualizationManager()
+    cleanup_requested = "--cleanup-vtx-lab" in sys.argv
     resume_requested = "--resume-vtx-lab" in sys.argv
+
+    if cleanup_requested:
+        try:
+            manager.cleanup_after_lab_if_safe()
+        except Exception as exc:
+            _msgbox(
+                "Pulizia VT-x Lab",
+                "Non e' stato possibile rimuovere automaticamente la voce "
+                f"temporanea di boot:\n\n{exc}",
+                icon=0x30,
+            )
+        return True
 
     if resume_requested:
         try:
