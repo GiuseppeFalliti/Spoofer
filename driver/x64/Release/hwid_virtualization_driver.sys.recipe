@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\Release\hwid_virtualization_driver.sys</FullPath>
+      <FullPath>C:\Users\Giuseppe Falliti\Desktop\Spoofer\driver\x64\ReleaseTest\hwid_virtualization_driver.sys</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

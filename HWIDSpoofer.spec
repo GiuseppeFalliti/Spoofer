@@ -5,8 +5,8 @@ a = Analysis(
     ['C:/Users/Giuseppe Falliti/Desktop/Spoofer/main.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:/Users/Giuseppe Falliti/Desktop/Spoofer/config.json', '.')],
-    hiddenimports=['PyQt5', 'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'core', 'core.mac_spoofer', 'core.hwid_spoofer', 'core.registry_utils', 'core.driver_utils', 'core.smbios_type1', 'gui', 'gui.main_window', 'gui.config_dialog', 'winreg', 'ctypes', 'win32service', 'win32file', 'win32con', 'pywintypes', 'win32api'],
+    datas=[('C:/Users/Giuseppe Falliti/Desktop/Spoofer/driver/x64/ReleaseTest/hwid_virtualization_driver.sys', '.'), ('C:/Users/Giuseppe Falliti/Desktop/Spoofer/config.json', '.')],
+    hiddenimports=['PyQt5', 'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'core', 'core.mac_spoofer', 'core.hwid_spoofer', 'core.registry_utils', 'core.driver_utils', 'core.smbios_type1', 'core.virtualization_manager', 'gui', 'gui.main_window', 'gui.config_dialog', 'winreg', 'ctypes', 'win32service', 'win32file', 'win32con', 'pywintypes', 'win32api'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    uac_admin=True,
 )
