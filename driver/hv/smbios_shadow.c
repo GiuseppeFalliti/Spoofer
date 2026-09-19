@@ -107,7 +107,8 @@ HvPatchSmbiosType1(
             type1->Signature,
             "HVLAB01",
             7) != 7 ||
-        type1->Type != 1) {
+        type1->Type != 1 ||
+        type1->Length != sizeof(*type1)) {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -256,21 +257,64 @@ HvCreateSmbiosShadow(
 }
 
 NTSTATUS
+HvCopyLabSmbiosShadowSnapshot(
+    _Out_writes_bytes_(BufferSize) PVOID Buffer,
+    _In_ ULONG BufferSize,
+    _Out_ PULONG BytesWritten
+    )
+{
+    PHV_LAB_SMBIOS_TYPE1 type1;
+
+    if (Buffer == NULL || BytesWritten == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *BytesWritten = 0;
+
+    if (g_HvState.Ept.LabShadowPage == NULL) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    type1 =
+        (PHV_LAB_SMBIOS_TYPE1)
+            g_HvState.Ept.LabShadowPage;
+
+    if (RtlCompareMemory(
+            type1->Signature,
+            "HVLAB01",
+            7) != 7 ||
+        type1->Type != 1 ||
+        type1->Length != sizeof(*type1)) {
+        return STATUS_DATA_ERROR;
+    }
+
+    if (BufferSize < sizeof(*type1)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    RtlCopyMemory(
+        Buffer,
+        type1,
+        sizeof(*type1)
+        );
+
+    *BytesWritten = sizeof(*type1);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
 HvInjectSmbiosData(
     VOID
     )
 {
-    if (InterlockedCompareExchange(
-            &g_HvState.Ept.LabShadowInstalled,
-            0,
-            0) == 0) {
+    if (g_HvState.Ept.LabShadowPage == NULL) {
         return STATUS_DEVICE_NOT_READY;
     }
 
     //
-    // EPT redirection already points the synthetic GPA at the synthetic
-    // shadow page. Re-applying the deterministic lab patch is sufficient for
-    // repeatable tests without touching system firmware identifiers.
+    // The patch is applied only to the private clone.  VMX root accesses this
+    // host virtual address directly; EPT is used only when the guest later
+    // touches LabSmbiosPage and is redirected to this physical page.
     //
     return HvPatchSmbiosType1(
         g_HvState.Ept.LabShadowPage,
