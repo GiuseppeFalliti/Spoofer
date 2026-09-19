@@ -14,7 +14,13 @@ from PyQt5.QtGui import QIcon
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from core.mac_spoofer import MacSpoofer
 from core.hwid_spoofer import HwidSpoofer
-from core.driver_utils import load_driver, unload_driver, send_ioctl
+from core.driver_utils import (
+    load_driver,
+    unload_driver,
+    send_ioctl,
+    is_service_running,
+    is_device_available,
+)
 from core.smbios_type1 import generate_random_uuid
 from gui.config_dialog import ConfigDialog
 
@@ -58,6 +64,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.init_ui()
         self.refresh_interfaces()
+        self._sync_driver_state()
         self._apply_startup_driver_config()
 
     def init_ui(self):
@@ -243,10 +250,33 @@ class MainWindow(QMainWindow):
         self.cb_hal_hook.stateChanged.connect(self.on_hook_state_changed)
         self.cb_smbios_hook.stateChanged.connect(self.on_hook_state_changed)
 
+    def _sync_driver_state(self):
+        """Allinea la GUI allo stato reale del servizio e del device."""
+        service_running = is_service_running(SERVICE_NAME)
+        device_ready = is_device_available(DEVICE_PATH)
+        loaded = service_running and device_ready
+
+        if loaded:
+            self.lbl_driver_status.setText("Stato: Caricato")
+            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: green;")
+            self._set_driver_widgets_enabled(True)
+            self.log_message("Driver kernel rilevato come attivo.")
+        else:
+            self.lbl_driver_status.setText("Stato: Non Caricato")
+            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: red;")
+            self._set_driver_widgets_enabled(False)
+            if service_running and not device_ready:
+                self.log_message(
+                    "Servizio driver attivo ma device \\.\\HwidSpoofer non disponibile."
+                )
+
+        return loaded
+
     def _apply_startup_driver_config(self):
         """Applica le preferenze di avvio dal config dialog."""
         if self.config.get("start_with_driver", False):
-            self.on_load_driver()
+            if not self._sync_driver_state():
+                self.on_load_driver()
             if self.config.get("auto_enable_hooks", False):
                 # Blocca i segnali per evitare chiamate IOCTL multiple durante l'avvio
                 self.cb_firmware_hook.blockSignals(True)
@@ -296,9 +326,10 @@ class MainWindow(QMainWindow):
         try:
             if not load_driver(SERVICE_NAME):
                 raise RuntimeError(f"Impossibile avviare il servizio driver '{SERVICE_NAME}'.")
-            self.lbl_driver_status.setText("Stato: Caricato")
-            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: green;")
-            self._set_driver_widgets_enabled(True)
+            if not self._sync_driver_state():
+                raise RuntimeError(
+                    "Il servizio risulta avviato ma il device \\.\\HwidSpoofer non e' raggiungibile."
+                )
             self.log_message("Driver kernel caricato con successo.")
         except Exception as e:
             QMessageBox.critical(self, "Errore Driver", f"Impossibile caricare il driver:\n{str(e)}")
@@ -316,9 +347,7 @@ class MainWindow(QMainWindow):
 
             if not unload_driver(SERVICE_NAME):
                 raise RuntimeError(f"Impossibile arrestare o eliminare il servizio '{SERVICE_NAME}'.")
-            self.lbl_driver_status.setText("Stato: Non Caricato")
-            self.lbl_driver_status.setStyleSheet("font-weight: bold; color: red;")
-            self._set_driver_widgets_enabled(False)
+            self._sync_driver_state()
             self.log_message("Driver kernel scaricato.")
         except Exception as e:
             QMessageBox.critical(self, "Errore Driver", f"Impossibile scaricare il driver:\n{str(e)}")
@@ -370,8 +399,8 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def test_smbios_hook(self):
-        """Richiede al driver il blob SMBIOS fittizio e lo mostra in formato esadecimale."""
-        if not self.btn_unload_driver.isEnabled():
+        """Esegue un test SMBIOS fittizio autosufficiente e ripristina lo stato."""
+        if not self._sync_driver_state():
             QMessageBox.warning(
                 self,
                 "Driver non caricato",
@@ -379,12 +408,43 @@ class MainWindow(QMainWindow):
             )
             return
 
-        success, data = send_ioctl(
-            DEVICE_PATH,
-            IOCTL_QUERY_FAKE_SMBIOS,
-            b"",
-            512
-        )
+        was_enabled = self.cb_smbios_hook.isChecked()
+        enabled_for_test = False
+
+        if not was_enabled:
+            success, _ = send_ioctl(
+                DEVICE_PATH,
+                0x80002010,
+                (1).to_bytes(4, byteorder="little"),
+                0,
+            )
+            if not success:
+                error_code = getattr(send_ioctl, "last_error", None)
+                QMessageBox.critical(
+                    self,
+                    "Errore Test SMBIOS",
+                    "Impossibile abilitare temporaneamente il canale SMBIOS "
+                    f"di test. Win32={error_code}",
+                )
+                self._sync_driver_state()
+                return
+            enabled_for_test = True
+
+        try:
+            success, data = send_ioctl(
+                DEVICE_PATH,
+                IOCTL_QUERY_FAKE_SMBIOS,
+                b"",
+                512
+            )
+        finally:
+            if enabled_for_test:
+                send_ioctl(
+                    DEVICE_PATH,
+                    0x80002014,
+                    (0).to_bytes(4, byteorder="little"),
+                    0,
+                )
 
         if not success:
             error_code = getattr(send_ioctl, "last_error", None)
@@ -399,6 +459,7 @@ class MainWindow(QMainWindow):
                 "Errore Test SMBIOS",
                 f"Impossibile ricevere il blob SMBIOS dal driver.\n{error_text}"
             )
+            self._sync_driver_state()
             return
 
         if not data:
