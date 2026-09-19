@@ -59,7 +59,29 @@ def load_driver(service_name: str, driver_path: str = DRIVER_FILENAME) -> bool:
             )
         except pywintypes.error as e:
             if e.winerror == 1073:  # ERROR_SERVICE_EXISTS
-                svc_handle = win32service.OpenService(scm_handle, service_name, win32service.SERVICE_ALL_ACCESS)
+                svc_handle = win32service.OpenService(
+                    scm_handle,
+                    service_name,
+                    win32service.SERVICE_ALL_ACCESS,
+                )
+
+                # PyInstaller --onefile estrae il .sys in una cartella _MEI
+                # diversa a ogni avvio. Se il servizio esiste già, ImagePath
+                # potrebbe quindi puntare a una vecchia cartella temporanea
+                # ormai eliminata. Aggiorna sempre il percorso prima di avviare.
+                win32service.ChangeServiceConfig(
+                    svc_handle,
+                    win32service.SERVICE_NO_CHANGE,
+                    win32service.SERVICE_NO_CHANGE,
+                    win32service.SERVICE_NO_CHANGE,
+                    driver_path,
+                    None,
+                    0,
+                    None,
+                    None,
+                    None,
+                    service_name,
+                )
             else:
                 raise
 
