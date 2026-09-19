@@ -484,37 +484,48 @@ class VirtualizationManager:
             processor_count=processor_count,
         )
 
-    def finish_resume(self) -> VtxCapabilities:
-        """Completa il resume: verifica boot Lab, driver e capacita' VMX/EPT."""
+    def finish_resume(self) -> Optional[VtxCapabilities]:
+        """Completa un resume valido; None indica un resume stale/orfano."""
         state = self.load_state()
         self._delete_task(TASK_RESUME_NAME)
 
-        expected_guid = state.get("boot_guid") if state else None
+        # Un task rimasto da una vecchia build non deve mai far credere
+        # all'app che Windows sia avviato nella Lab.
+        if not state:
+            self._clear_bootstrap_tasks()
+            return None
+
+        expected_guid = state.get("boot_guid")
         current_guid = self.current_boot_guid()
 
+        # Se siamo gia' tornati al Windows normale, il task di resume e'
+        # semplicemente stale: elimina la vecchia Lab e continua normalmente.
         if (
             expected_guid
             and current_guid
             and str(expected_guid).lower() != str(current_guid).lower()
         ):
-            if state:
-                self._schedule_cleanup(state)
-            raise RuntimeError(
-                "Windows non ha avviato la voce VT-x Lab prevista. "
-                f"Attesa={expected_guid}, corrente={current_guid}. "
-                "Il boot normale non e' stato modificato."
-            )
+            self._clear_bootstrap_tasks()
+            self._delete_boot_entry(expected_guid)
+            self._delete_state()
+            return None
 
+        # Senza un GUID verificabile non affermare che la Lab sia attiva.
+        if not expected_guid or not current_guid:
+            self._clear_bootstrap_tasks()
+            return None
+
+        # Solo da qui sappiamo che {current} e' davvero la voce Lab prevista.
         if self.is_hypervisor_present():
-            if state:
-                self._schedule_cleanup(state)
+            self._schedule_cleanup(state)
             raise RuntimeError(
-                "La voce VT-x Lab e' stata avviata, ma il Windows hypervisor "
-                "risulta ancora presente anche con hypervisorlaunchtype=off e "
-                "vsmlaunchtype=off. Il sistema potrebbe avere VBS/Credential "
-                "Guard con protezione firmware/UEFI oppure un'altra policy "
-                "di piattaforma. Nessuna protezione firmware viene forzata "
-                "o rimossa automaticamente."
+                "La voce VT-x Lab e' stata realmente avviata, ma il Windows "
+                "hypervisor risulta ancora presente anche con "
+                "hypervisorlaunchtype=off e vsmlaunchtype=off. Il sistema "
+                "potrebbe avere VBS/Credential Guard con protezione "
+                "firmware/UEFI oppure un'altra policy di piattaforma. "
+                "Nessuna protezione firmware viene forzata o rimossa "
+                "automaticamente."
             )
 
         from core.driver_utils import load_driver
@@ -524,14 +535,8 @@ class VirtualizationManager:
 
         capabilities = self.query_driver_capabilities()
 
-        # Non cancellare la voce BCD dalla sessione che la sta usando.
-        # Pianifica invece una pulizia al prossimo logon/boot; il relativo
-        # handler verifica che la voce Lab non sia piu' quella corrente.
-        if state:
-            state = dict(state)
-            state["phase"] = "lab_active"
-            self._schedule_cleanup(state)
-        else:
-            self._clear_bootstrap_tasks()
+        state = dict(state)
+        state["phase"] = "lab_active"
+        self._schedule_cleanup(state)
 
         return capabilities
