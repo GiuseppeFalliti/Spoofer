@@ -11,6 +11,7 @@ ICON_ICO = os.path.join(BASE_DIR, "gui", "resources", "icon.ico")
 EXE_NAME = "HWIDSpoofer"
 
 DRIVER_CANDIDATES = [
+    os.environ.get("HWID_DRIVER_SYS"),
     os.path.join(
         BASE_DIR,
         "driver",
@@ -18,22 +19,14 @@ DRIVER_CANDIDATES = [
         "ReleaseTest",
         "hwid_virtualization_driver.sys",
     ),
-    os.path.join(
-        BASE_DIR,
-        "driver",
-        "x64",
-        "Release",
-        "hwid_virtualization_driver.sys",
-    ),
-    os.path.join(BASE_DIR, "hwid_virtualization_driver.sys"),
 ]
 
 
 def find_driver_sys():
     """Preferisce la build WDK piu' recente del laboratorio rispetto al .sys root."""
     for path in DRIVER_CANDIDATES:
-        if os.path.isfile(path):
-            return path
+        if path and os.path.isfile(path):
+            return os.path.abspath(path)
     return None
 
 
@@ -67,14 +60,19 @@ def build() -> None:
 
     driver_sys = find_driver_sys()
     if driver_sys is None:
-        print("[AVVISO] Driver non trovato nei percorsi previsti:")
-        for candidate in DRIVER_CANDIDATES:
-            print(f"         - {candidate}")
-        print("         Il file .sys NON verra' incluso nell'eseguibile.")
-        include_driver = False
-    else:
-        print(f"[OK] Driver trovato        : {driver_sys}")
-        include_driver = True
+        print("[ERRORE] Driver lab non trovato.")
+        print(
+            "         Compila prima driver\\x64\\ReleaseTest\\"
+            "hwid_virtualization_driver.sys"
+        )
+        print(
+            "         oppure imposta HWID_DRIVER_SYS con il percorso "
+            "assoluto del .sys da includere."
+        )
+        sys.exit(1)
+
+    print(f"[OK] Driver trovato        : {driver_sys}")
+    include_driver = True
 
     if os.path.isfile(ICON_ICO):
         print(f"[OK] Icona trovata         : {ICON_ICO}")
